@@ -153,3 +153,10 @@ function _startTimer () {
   const devMs = process.env.NODE_ENV === 'production' ? undefined : 50 * 1000
   cancelTimer = scheduleBeReal(onBeRealTrigger, devMs)
 }
+
+// ─── To check that encryption works correctly ───────────────────────────────────────────────────────────
+ipcMain.handle('dev:rawDump', async () => {
+  if (!pass) return { ok: false }
+  const all = await pass.list().toArray()
+  return { ok: true, entries: all }
+})

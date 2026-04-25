@@ -1,219 +1,173 @@
 // p2p/feed.js
-// Manages the BeReal-style feed:
-//   - Encrypting a note before storing it (XOR cipher with group key)
-//   - Revealing notes only after the local user has submitted
-//   - Wiping all notes when a new round starts
 //
-// Key schema in Autopass:
-//   round:<roundId>:note:<publicKeyHex>   → { encrypted: <hex>, author: <hex>, ts: <ms> }
-//   round:<roundId>:meta                  → { startedAt: <ms>, triggeredAt: <ms> }
-//   config:currentRound                   → <roundId string>
+// Encryption: libsodium secretbox (XSalsa20-Poly1305) via sodium-universal
+//   - Authenticated encryption: if the key is wrong or data is tampered, decrypt returns null
+//   - Each user encrypts with their own 32-byte key derived from their writerKey
+//   - On submit, they publish their key to the shared store
+//   - Peers can only decrypt once the key is published (i.e. after submit)
+//
+// Key schema:
+//   round:<id>:note:<authorHex>  → { encrypted: <hex>, nonce: <hex>, author, ts }
+//   round:<id>:key:<authorHex>   → { key: <hex>, author }
+//   round:<id>:meta              → { startedAt, triggeredAt }
+//   config:currentRound          → <roundId string>
 
 const { put, get, del, listByPrefix } = require('./peer')
+const sodium = require('sodium-universal')
 const b4a = require('b4a')
 
-// ─── Encryption helpers ───────────────────────────────────────────────────────
+// ─── Encryption (libsodium secretbox = XSalsa20-Poly1305) ────────────────────
 
 /**
- * XOR-encrypt a plaintext string with a 32-byte key Buffer.
- * We cycle the key bytes across the plaintext.
- * Returns a hex string.
+ * Encrypt plaintext with a 32-byte key.
+ * Generates a random 24-byte nonce per message.
+ * Returns { encrypted: hex, nonce: hex }
  */
-function xorEncrypt (plaintext, keyBuf) {
-  const plain = b4a.from(plaintext, 'utf8')
-  const out = b4a.alloc(plain.length)
-  for (let i = 0; i < plain.length; i++) {
-    out[i] = plain[i] ^ keyBuf[i % keyBuf.length]
+function encrypt (plaintext, keyBuf) {
+  const msg = b4a.from(plaintext, 'utf8')
+  const nonce = b4a.alloc(sodium.crypto_secretbox_NONCEBYTES)
+  sodium.randombytes_buf(nonce)
+
+  const ciphertext = b4a.alloc(msg.length + sodium.crypto_secretbox_MACBYTES)
+  sodium.crypto_secretbox_easy(ciphertext, msg, nonce, keyBuf)
+
+  return {
+    encrypted: b4a.toString(ciphertext, 'hex'),
+    nonce: b4a.toString(nonce, 'hex')
   }
-  return b4a.toString(out, 'hex')
 }
 
 /**
- * Decrypt a hex-encoded XOR-encrypted string.
- * Returns the original plaintext string.
+ * Decrypt. Returns plaintext string, or null if key is wrong / data tampered.
+ * The Poly1305 MAC means any wrong key produces null — not garbage output.
  */
-function xorDecrypt (hexCipher, keyBuf) {
-  const cipher = b4a.from(hexCipher, 'hex')
-  const out = b4a.alloc(cipher.length)
-  for (let i = 0; i < cipher.length; i++) {
-    out[i] = cipher[i] ^ keyBuf[i % keyBuf.length]
+function decrypt (encryptedHex, nonceHex, keyBuf) {
+  try {
+    const ciphertext = b4a.from(encryptedHex, 'hex')
+    const nonce = b4a.from(nonceHex, 'hex')
+    const plaintext = b4a.alloc(ciphertext.length - sodium.crypto_secretbox_MACBYTES)
+    const ok = sodium.crypto_secretbox_open_easy(plaintext, ciphertext, nonce, keyBuf)
+    if (!ok) return null
+    return b4a.toString(plaintext, 'utf8')
+  } catch {
+    return null
   }
-  return b4a.toString(out, 'utf8')
 }
 
 // ─── Round management ─────────────────────────────────────────────────────────
 
-/**
- * Read the current round ID from shared state.
- * Returns null when no round exists yet.
- */
 async function getCurrentRound (pass) {
   return await get(pass, 'config:currentRound')
 }
 
 async function getOrCreateCurrentRound (pass) {
   const roundId = await getCurrentRound(pass)
-  if (!roundId) {
-    return await startNewRound(pass)
-  }
+  if (!roundId) return await startNewRound(pass)
   return roundId
 }
 
-/**
- * Start a new round: wipe old notes, write new round metadata.
- * Returns the new roundId.
- */
 async function startNewRound (pass) {
   const roundId = String(Date.now())
-
-  // Wipe all notes from previous round
   const oldRound = await get(pass, 'config:currentRound')
-  if (oldRound) {
-    await wipeRound(pass, oldRound)
-  }
-
+  if (oldRound) await wipeRound(pass, oldRound)
   await put(pass, 'config:currentRound', roundId)
   await put(pass, `round:${roundId}:meta`, {
     startedAt: Date.now(),
     triggeredAt: Date.now()
   })
-
   return roundId
 }
 
-/**
- * Delete all note entries for a given round.
- */
 async function wipeRound (pass, roundId) {
-  const prefix = `round:${roundId}:note:`
-  const entries = await listByPrefix(pass, prefix)
-  for (const { key } of entries) {
+  for (const { key } of await listByPrefix(pass, `round:${roundId}:`)) {
     await del(pass, key)
   }
-  await del(pass, `round:${roundId}:meta`)
 }
 
 // ─── Note operations ──────────────────────────────────────────────────────────
 
-/**
- * Submit the local user's note for the current round.
- * Encrypts with the group key before storing.
- *
- * @param {Autopass} pass
- * @param {string}   noteText  — plaintext note
- * @param {Buffer}   groupKey  — 32-byte encryption key
- * @param {string}   authorHex — hex of local public key (for display)
- * @returns {string} roundId
- */
-async function submitNote (pass, noteText, groupKey, authorHex) {
+async function submitNote (pass, noteText, personalKey, authorHex) {
   const roundId = await getOrCreateCurrentRound(pass)
-  const encrypted = xorEncrypt(noteText, groupKey)
+  const { encrypted, nonce } = encrypt(noteText, personalKey)
 
   await put(pass, `round:${roundId}:note:${authorHex}`, {
-    encrypted,
-    author: authorHex,
-    ts: Date.now()
+    encrypted, nonce, author: authorHex, ts: Date.now()
+  })
+
+  // Publishing the key is the atomic "unlock" action
+  await put(pass, `round:${roundId}:key:${authorHex}`, {
+    key: b4a.toString(personalKey, 'hex'),
+    author: authorHex
   })
 
   return roundId
 }
 
-/**
- * Check if the local user has already submitted a note this round.
- */
 async function hasSubmitted (pass, authorHex) {
   const roundId = await getCurrentRound(pass)
   if (!roundId) return false
-  const entry = await get(pass, `round:${roundId}:note:${authorHex}`)
-  return entry !== null && !entry._tombstone
+  return (await get(pass, `round:${roundId}:key:${authorHex}`)) !== null
 }
 
 /**
- * Fetch all notes for the current round.
- * If localUserSubmitted is false, returns entries with content = null (hidden).
- * If true, decrypts and returns all content.
+ * Fetch all notes. For each note:
+ *   - If author's key exists in store → decrypt (secretbox)
+ *   - If not → hidden: true (no key = mathematically unreadable)
  *
- * @param {Autopass} pass
- * @param {boolean}  localUserSubmitted
- * @param {Buffer}   groupKey
- * @returns {Array<{ author, content, ts, hidden }>}
+ * Used for BOTH the submit screen (shows locked cards) and the feed screen.
  */
-async function getFeedNotes (pass, localUserSubmitted, groupKey) {
+async function getFeedNotes (pass, localAuthorHex) {
   const roundId = await getCurrentRound(pass)
   if (!roundId) return []
-  const prefix = `round:${roundId}:note:`
-  const entries = await listByPrefix(pass, prefix)
 
-  return entries.map(({ value }) => {
-    if (!localUserSubmitted) {
-      return {
-        author: value.author,
-        content: null,
-        ts: value.ts,
-        hidden: true
-      }
+  const noteEntries = await listByPrefix(pass, `round:${roundId}:note:`)
+  const results = []
+
+  for (const { value: note } of noteEntries) {
+    const keyEntry = await get(pass, `round:${roundId}:key:${note.author}`)
+
+    if (!keyEntry) {
+      results.push({ author: note.author, content: null, ts: note.ts, hidden: true, isOwn: note.author === localAuthorHex })
+      continue
     }
-    return {
-      author: value.author,
-      content: xorDecrypt(value.encrypted, groupKey),
-      ts: value.ts,
-      hidden: false
-    }
-  })
+
+    const keyBuf = b4a.from(keyEntry.key, 'hex')
+    const content = decrypt(note.encrypted, note.nonce, keyBuf)
+    results.push({ author: note.author, content: content ?? '[decryption failed]', ts: note.ts, hidden: false, isOwn: note.author === localAuthorHex })
+  }
+
+  return results
 }
 
-/**
- * Get current round metadata (startedAt, triggeredAt).
- */
 async function getRoundMeta (pass) {
   const roundId = await getCurrentRound(pass)
   if (!roundId) return null
   return await get(pass, `round:${roundId}:meta`)
 }
 
-// ─── BeReal timer ─────────────────────────────────────────────────────────────
-
-/**
- * Schedule the next BeReal trigger at a random time within the next 24h window.
- * In dev/test mode you can pass shortMs to fire after N milliseconds instead.
- *
- * Calls onTrigger() when it fires, then re-schedules itself.
- *
- * @param {Function} onTrigger   — async callback
- * @param {number}   [shortMs]   — if set, use this delay instead of random 24h
- * @returns {Function} cancel — call to stop the timer
- */
-function scheduleBeReal (onTrigger, shortMs) {
+function scheduleBeReal (onTrigger) {
   let timer = null
-
+  function msUntilNextTrigger () {
+    const now = new Date()
+    const hour = 9 + Math.floor(Math.random() * 13)
+    const minute = Math.floor(Math.random() * 60)
+    const trigger = new Date(now)
+    trigger.setHours(hour, minute, 0, 0)
+    if (trigger <= now) trigger.setDate(trigger.getDate() + 1)
+    return trigger.getTime() - now.getTime()
+  }
   function schedule () {
-    // Random delay: between 0 and 24 hours (in ms), or shortMs for testing
-    const delay = shortMs !== undefined
-      ? shortMs
-      : Math.floor(Math.random() * 24 * 60 * 60 * 1000)
-
+    const delay = msUntilNextTrigger()
     const fireAt = new Date(Date.now() + delay)
-    console.log(`[BeReal] Next trigger scheduled for: ${fireAt.toLocaleTimeString()} (in ${Math.round(delay / 1000)}s)`)
-
+    console.log(`[BeReal] Next trigger: ${fireAt.toLocaleString()} (in ${Math.round(delay / 1000 / 60)}min)`)
     timer = setTimeout(async () => {
-      console.log('[BeReal] 🔔 Trigger fired!')
+      console.log('[BeReal] 🔔 Triggered!')
       await onTrigger()
-      schedule() // re-schedule for next day
+      schedule()
     }, delay)
   }
-
   schedule()
   return () => { if (timer) clearTimeout(timer) }
 }
 
-module.exports = {
-  getCurrentRound,
-  startNewRound,
-  submitNote,
-  hasSubmitted,
-  getFeedNotes,
-  getRoundMeta,
-  scheduleBeReal,
-  xorEncrypt,
-  xorDecrypt
-}
+module.exports = { getCurrentRound, startNewRound, submitNote, hasSubmitted, getFeedNotes, getRoundMeta, scheduleBeReal }

@@ -8,7 +8,7 @@ const b4a = require('b4a')
 
 let _pass = null
 let _store = null
-let _storePromise = null  // ← THE FIX: all concurrent callers await the same promise
+let _storePromise = null
 
 function storagePath () {
   const userSlot = process.env.PEAREAL_USER || 'default'
@@ -30,9 +30,6 @@ async function hasSessionMarker () {
   catch { return false }
 }
 
-// Only ever opens ONE Corestore, even if called concurrently.
-// All concurrent callers await the same _storePromise instead of
-// each racing to open RocksDB on the same path (which causes the lock error).
 async function makeStore () {
   if (_store) return _store
   if (!_storePromise) {
@@ -47,8 +44,6 @@ async function makeStore () {
   }
   return _storePromise
 }
-
-// ── Public API ────────────────────────────────────────────────────────────────
 
 async function createGroup () {
   const store = await makeStore()
@@ -71,10 +66,7 @@ async function joinGroup (inviteCode) {
   return pass
 }
 
-// Called on startup — only resumes if we previously saved a session marker.
-// If no marker exists, returns null immediately without touching the store.
 async function openSession () {
-  // Check marker WITHOUT opening the store first
   if (!(await hasSessionMarker())) return null
   try {
     const store = await makeStore()
@@ -99,8 +91,11 @@ function getAuthorHex (pass) {
 
 function deriveGroupKey (pass) {
   const crypto = require('hypercore-crypto')
-  const key = pass.writerKey || pass.key
-  return crypto.hash(key)
+  // encryptionKey is the shared secret negotiated during pairing —
+  // it is IDENTICAL on every peer, so all members encrypt/decrypt with the same key.
+  // pass.key (the Autobase key) is also shared and works as a fallback.
+  const sharedKey = pass.encryptionKey || pass.key
+  return crypto.hash(sharedKey)
 }
 
 module.exports = { createGroup, joinGroup, openSession, getPass, getAuthorHex, deriveGroupKey }

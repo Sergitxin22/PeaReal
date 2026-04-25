@@ -24,5 +24,8 @@ contextBridge.exposeInMainWorld('peareal', {
   onFeedUpdated: (cb) => ipcRenderer.on('feed:updated', cb),
 
   // Remove listeners (cleanup)
-  removeAllListeners: (channel) => ipcRenderer.removeAllListeners(channel)
+  removeAllListeners: (channel) => ipcRenderer.removeAllListeners(channel),
+
+  // For testing: get raw store dump (unencrypted)
+  rawDump: () => ipcRenderer.invoke('dev:rawDump')
 })

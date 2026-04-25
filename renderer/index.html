@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PeaReal 🍐</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ── SCREEN 1: Auth ───────────────────────────────────────── -->
+  <div id="screen-auth" class="screen active">
+    <div class="auth-box">
+      <div class="logo">🍐 PeaReal</div>
+      <p class="tagline">Share your real moment. P2P. No servers.</p>
+
+      <button id="btn-create" class="btn btn-primary">Create a Group</button>
+      <div class="divider">or</div>
+      <input id="input-invite" type="text" placeholder="Paste invite code…" />
+      <button id="btn-join" class="btn btn-secondary">Join Group</button>
+
+      <div id="auth-error" class="error hidden"></div>
+
+      <!-- Shown after creating a group -->
+      <div id="invite-box" class="invite-box hidden">
+        <p>Share this invite code with your friends:</p>
+        <div id="invite-code" class="code-block"></div>
+        <button id="btn-copy-invite" class="btn btn-ghost">📋 Copy</button>
+        <button id="btn-go-feed" class="btn btn-primary">Go to Feed →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── SCREEN 2: Feed ───────────────────────────────────────── -->
+  <div id="screen-feed" class="screen hidden">
+    <header class="topbar">
+      <span class="logo-sm">🍐 PeaReal</span>
+      <span id="author-tag" class="author-tag"></span>
+      <div class="topbar-actions">
+        <!-- DEV MODE controls -->
+        <button id="btn-trigger" class="btn btn-ghost btn-sm" title="Trigger new round now (dev)">⚡ Trigger</button>
+      </div>
+    </header>
+
+    <!-- Waiting state (no round yet / between rounds) -->
+    <div id="state-waiting" class="state-panel hidden">
+      <div class="state-icon">⏳</div>
+      <h2>Waiting for the next PeaReal…</h2>
+      <p>A notification will appear at a random time today.</p>
+    </div>
+
+    <!-- Active round: user hasn't submitted yet -->
+    <div id="state-submit" class="state-panel hidden">
+      <div class="state-icon">🍐</div>
+      <h2>PeaReal time!</h2>
+      <p>Write your note. Submit to reveal what others wrote.</p>
+      <textarea id="note-input" placeholder="What's happening right now?" maxlength="280"></textarea>
+      <div class="char-count"><span id="char-count">0</span>/280</div>
+      <button id="btn-submit" class="btn btn-primary">Submit & Reveal</button>
+      <div id="submit-error" class="error hidden"></div>
+    </div>
+
+    <!-- Active round: user submitted, showing feed -->
+    <div id="state-feed" class="state-panel hidden">
+      <div class="feed-header">
+        <h2>Today's moments</h2>
+        <p id="feed-round-time" class="muted"></p>
+      </div>
+
+      <!-- Peers who haven't submitted yet -->
+      <div id="pending-peers" class="pending-peers hidden">
+        <span class="pending-label">⏳ Waiting for:</span>
+        <span id="pending-list"></span>
+      </div>
+
+      <div id="feed-list" class="feed-list">
+        <!-- Note cards injected here by app.js -->
+      </div>
+
+      <div id="feed-empty" class="muted hidden">No notes yet — be the first!</div>
+    </div>
+  </div>
+
+  <!-- ── Notification toast ────────────────────────────────────── -->
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

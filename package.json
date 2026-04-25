@@ -1,0 +1,17 @@
+{
+  "name": "peareal",
+  "version": "1.0.0",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "dependencies": {
+    "autopass": "^3.4.1",
+    "electron": "^41.3.0",
+    "hyperbee": "^2.27.3",
+    "hypercore": "^11.28.1",
+    "pear": "^2.0.1",
+    "b4a": "^1.6.4",
+    "hypercore-crypto": "^3.4.2"
+  }
+}

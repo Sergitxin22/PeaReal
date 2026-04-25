@@ -137,25 +137,6 @@ async function submitNote(pass, noteText, _groupKey, authorHex, authorPublicKeyP
     ts: Date.now()
   })
 
-  const pendingReqs = await listByPrefix(pass, `round:${roundId}:unlockReq:${authorHex}:`)
-  for (const req of pendingReqs) {
-    const requesterHex = req.value?.from
-    const requesterPub = req.value?.requesterPublicKeyPem
-    if (!requesterHex || !requesterPub) continue
-    const requesterSubmitted = await get(pass, noteKey(roundId, requesterHex))
-    if (!requesterSubmitted) continue
-    const grantPath = unlockGrantKey(roundId, authorHex, requesterHex)
-    const existingGrant = await get(pass, grantPath)
-    if (existingGrant) continue
-    await put(pass, grantPath, {
-      from: authorHex,
-      to: requesterHex,
-      wrappedKey: wrapContentKeyForPeer(contentKey, requesterPub),
-      wrapAlg: WRAP_ALG,
-      ts: Date.now()
-    })
-  }
-
   return roundId
 }
 
@@ -165,16 +146,16 @@ async function hasSubmitted(pass, authorHex) {
   return (await get(pass, noteKey(roundId, authorHex))) !== null
 }
 
-async function processIncomingUnlockRequests(pass, roundId, localAuthorHex, localPrivateKeyPem) {
-  const myNote = await get(pass, noteKey(roundId, localAuthorHex))
-  if (!myNote) return
+async function getPendingUnlockRequests(pass, localAuthorHex) {
+  const roundId = await getCurrentRound(pass)
+  if (!roundId) return []
 
-  const selfGrant = await get(pass, unlockGrantKey(roundId, localAuthorHex, localAuthorHex))
-  if (!selfGrant?.wrappedKey) return
-  const myContentKey = unwrapContentKey(selfGrant.wrappedKey, localPrivateKeyPem)
-  if (!myContentKey) return
+  const myNote = await get(pass, noteKey(roundId, localAuthorHex))
+  if (!myNote) return []
 
   const requests = await listByPrefix(pass, `round:${roundId}:unlockReq:${localAuthorHex}:`)
+  const pending = []
+
   for (const reqEntry of requests) {
     const req = reqEntry.value
     const requesterHex = req?.from
@@ -188,14 +169,47 @@ async function processIncomingUnlockRequests(pass, roundId, localAuthorHex, loca
     const existingGrant = await get(pass, grantPath)
     if (existingGrant) continue
 
-    await put(pass, grantPath, {
-      from: localAuthorHex,
-      to: requesterHex,
-      wrappedKey: wrapContentKeyForPeer(myContentKey, requesterPub),
-      wrapAlg: WRAP_ALG,
-      ts: Date.now()
+    pending.push({
+      requesterHex,
+      requestedAt: req.ts || Date.now()
     })
   }
+
+  return pending.sort((a, b) => a.requestedAt - b.requestedAt)
+}
+
+async function approveUnlockRequest(pass, localAuthorHex, requesterHex, localPrivateKeyPem) {
+  const roundId = await getCurrentRound(pass)
+  if (!roundId) return { ok: false, error: 'No active round' }
+
+  const myNote = await get(pass, noteKey(roundId, localAuthorHex))
+  if (!myNote) return { ok: false, error: 'You have no note in this round' }
+
+  const req = await get(pass, unlockReqKey(roundId, localAuthorHex, requesterHex))
+  if (!req?.requesterPublicKeyPem) return { ok: false, error: 'No pending request for this peer' }
+
+  const requesterSubmitted = await get(pass, noteKey(roundId, requesterHex))
+  if (!requesterSubmitted) return { ok: false, error: 'Requester has not submitted yet' }
+
+  const grantPath = unlockGrantKey(roundId, localAuthorHex, requesterHex)
+  const existingGrant = await get(pass, grantPath)
+  if (existingGrant) return { ok: true, alreadyApproved: true }
+
+  const selfGrant = await get(pass, unlockGrantKey(roundId, localAuthorHex, localAuthorHex))
+  if (!selfGrant?.wrappedKey) return { ok: false, error: 'Missing local self grant' }
+
+  const myContentKey = unwrapContentKey(selfGrant.wrappedKey, localPrivateKeyPem)
+  if (!myContentKey) return { ok: false, error: 'Failed to recover content key' }
+
+  await put(pass, grantPath, {
+    from: localAuthorHex,
+    to: requesterHex,
+    wrappedKey: wrapContentKeyForPeer(myContentKey, req.requesterPublicKeyPem),
+    wrapAlg: WRAP_ALG,
+    ts: Date.now()
+  })
+
+  return { ok: true, approved: true }
 }
 
 async function ensureUnlockRequestForAuthor(pass, roundId, localAuthorHex, targetAuthorHex, localPublicKeyPem) {
@@ -227,8 +241,6 @@ async function getFeedNotes(pass, localUserSubmitted, _groupKey, localAuthorHex,
       hidden: true
     }))
   }
-
-  await processIncomingUnlockRequests(pass, roundId, localAuthorHex, localPrivateKeyPem)
 
   const results = []
   for (const { value: note } of notes) {
@@ -290,6 +302,8 @@ module.exports = {
   submitNote,
   hasSubmitted,
   getFeedNotes,
+  getPendingUnlockRequests,
+  approveUnlockRequest,
   getRoundMeta,
   scheduleBeReal
 }

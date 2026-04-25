@@ -1,71 +1,82 @@
 // renderer/app.js
-;(async () => {
+; (async () => {
   const $ = id => document.getElementById(id)
-  const screenAuth   = $('screen-auth')
-  const screenFeed   = $('screen-feed')
-  const btnCreate    = $('btn-create')
-  const btnJoin      = $('btn-join')
-  const inputInvite  = $('input-invite')
-  const authError    = $('auth-error')
-  const inviteBox    = $('invite-box')
-  const inviteCode   = $('invite-code')
-  const btnCopyInvite= $('btn-copy-invite')
-  const btnGoFeed    = $('btn-go-feed')
-  const authorTag    = $('author-tag')
+  const screenAuth = $('screen-auth')
+  const screenFeed = $('screen-feed')
+  const btnCreate = $('btn-create')
+  const btnJoin = $('btn-join')
+  const inputInvite = $('input-invite')
+  const authError = $('auth-error')
+  const inviteBox = $('invite-box')
+  const inviteCode = $('invite-code')
+  const btnCopyInvite = $('btn-copy-invite')
+  const btnGoFeed = $('btn-go-feed')
+  const authorTag = $('author-tag')
   const stateWaiting = $('state-waiting')
-  const stateSubmit  = $('state-submit')
-  const stateFeed    = $('state-feed')
-  const noteInput    = $('note-input')
-  const charCount    = $('char-count')
-  const btnSubmit    = $('btn-submit')
-  const submitError  = $('submit-error')
+  const stateSubmit = $('state-submit')
+  const stateFeed = $('state-feed')
+  const noteInput = $('note-input')
+  const charCount = $('char-count')
+  const btnSubmit = $('btn-submit')
+  const submitError = $('submit-error')
   const submitLockedList = $('submit-locked-list')  // locked cards on submit screen
-  const feedList     = $('feed-list')
-  const feedEmpty    = $('feed-empty')
-  const feedRoundTime= $('feed-round-time')
-  const btnTrigger   = $('btn-trigger')
-  const toast        = $('toast')
+  const feedList = $('feed-list')
+  const feedEmpty = $('feed-empty')
+  const feedRoundTime = $('feed-round-time')
+  const unlockRequests = $('unlock-requests')
+  const unlockRequestsList = $('unlock-requests-list')
+  const btnTrigger = $('btn-trigger')
+  const toast = $('toast')
 
   let isConnected = false
   let pollInterval = null
 
   // ── Helpers ───────────────────────────────────────────────────────────────────
 
-  function showScreen (name) {
+  function showScreen(name) {
     screenAuth.classList.add('hidden')
     screenFeed.classList.add('hidden')
     $('screen-' + name)?.classList.remove('hidden')
   }
 
-  function showFeedState (name) {
+  function showFeedState(name) {
     stateWaiting.classList.add('hidden')
     stateSubmit.classList.add('hidden')
     stateFeed.classList.add('hidden')
     $('state-' + name)?.classList.remove('hidden')
   }
 
-  function showError (el, msg) {
+  function showError(el, msg) {
     el.textContent = msg
     el.classList.remove('hidden')
     setTimeout(() => el.classList.add('hidden'), 8000)
   }
 
   let toastTimer = null
-  function showToast (msg, duration = 3000) {
+  function showToast(msg, duration = 3000) {
     toast.textContent = msg
     toast.classList.remove('hidden')
     if (toastTimer) clearTimeout(toastTimer)
     toastTimer = setTimeout(() => toast.classList.add('hidden'), duration)
   }
 
-  function formatTime (ms) {
+  function formatTime(ms) {
     if (!ms) return ''
     return new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   }
 
-  function shortId (hex) { return hex ? hex.slice(0, 8) : '???' }
+  function shortId(hex) { return hex ? hex.slice(0, 8) : '???' }
 
-  function colorFromId (hex) {
+  function formatDateTime(ms) {
+    if (!ms) return ''
+    return new Date(ms).toLocaleString([], {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    })
+  }
+
+  function colorFromId(hex) {
     const hue = parseInt((hex || '0000').slice(0, 4), 16) % 360
     return `hsl(${hue}, 70%, 55%)`
   }
@@ -117,7 +128,7 @@
 
   // ── Feed ──────────────────────────────────────────────────────────────────────
 
-  async function refreshFeed () {
+  async function refreshFeed() {
     if (!isConnected) return
     const res = await window.peareal.getFeed()
     if (!res?.ok) return
@@ -134,6 +145,7 @@
 
     // User submitted — show full feed with decrypted notes
     showFeedState('feed')
+    await refreshPendingUnlockRequests()
     if (meta?.triggeredAt) feedRoundTime.textContent = `Round started at ${formatTime(meta.triggeredAt)}`
     feedList.innerHTML = ''
     if (!notes?.length) {
@@ -144,11 +156,38 @@
     }
   }
 
+  async function refreshPendingUnlockRequests() {
+    if (!unlockRequests || !unlockRequestsList) return
+
+    const res = await window.peareal.getPendingUnlockRequests().catch(() => ({ ok: false, requests: [] }))
+    if (!res?.ok || !Array.isArray(res.requests) || res.requests.length === 0) {
+      unlockRequests.classList.add('hidden')
+      unlockRequestsList.innerHTML = ''
+      return
+    }
+
+    unlockRequests.classList.remove('hidden')
+    unlockRequestsList.innerHTML = ''
+
+    for (const req of res.requests) {
+      const row = document.createElement('div')
+      row.className = 'unlock-request-item'
+      row.innerHTML = `
+        <div class="unlock-request-meta">
+          <strong>#${shortId(req.requesterHex)}</strong>
+          <span>Requested at ${escapeHtml(formatDateTime(req.requestedAt))}</span>
+        </div>
+        <button class="btn btn-secondary btn-sm" data-approve-request="${escapeHtml(req.requesterHex)}">Approve</button>
+      `
+      unlockRequestsList.appendChild(row)
+    }
+  }
+
   /**
    * Render locked preview cards on the submit screen.
    * Shows how many peers have already posted, but content is cryptographically hidden.
    */
-  function renderLockedCards (notes) {
+  function renderLockedCards(notes) {
     if (!submitLockedList) return
     submitLockedList.innerHTML = ''
     const otherNotes = (notes || []).filter(n => !n.isOwn)
@@ -161,7 +200,7 @@
     })
   }
 
-  function renderNoteCard (note) {
+  function renderNoteCard(note) {
     const card = document.createElement('div')
     card.className = 'note-card' + (note.hidden ? ' hidden-note' : '')
     const avatarColor = colorFromId(note.author || '0000')
@@ -185,14 +224,14 @@
   }
 
   /** Generate a plausible-looking hex string for the locked card visual */
-  function generateFakeCipherPreview () {
+  function generateFakeCipherPreview() {
     const chars = '0123456789abcdef'
     let s = ''
     for (let i = 0; i < 48; i++) s += chars[Math.floor(Math.random() * 16)]
     return s.match(/.{1,8}/g).join(' ')
   }
 
-  function escapeHtml (str) {
+  function escapeHtml(str) {
     if (!str) return ''
     return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
   }
@@ -216,6 +255,28 @@
     await refreshFeed()
   })
 
+  unlockRequestsList?.addEventListener('click', async (event) => {
+    const target = event.target
+    if (!(target instanceof HTMLElement)) return
+    const requesterHex = target.getAttribute('data-approve-request')
+    if (!requesterHex) return
+
+    target.setAttribute('disabled', 'true')
+    target.textContent = 'Approving…'
+    const res = await window.peareal.approveUnlockRequest(requesterHex).catch(e => ({ ok: false, error: e.message }))
+
+    if (!res?.ok) {
+      showToast(`Approval failed: ${res?.error || 'unknown error'}`)
+      target.removeAttribute('disabled')
+      target.textContent = 'Approve'
+      return
+    }
+
+    showToast(`Approved #${shortId(requesterHex)}`)
+    await refreshPendingUnlockRequests()
+    await refreshFeed()
+  })
+
   // ── Dev ───────────────────────────────────────────────────────────────────────
 
   btnTrigger.addEventListener('click', async () => {
@@ -233,7 +294,7 @@
 
   window.peareal.onFeedUpdated(async () => { if (isConnected) await refreshFeed() })
 
-  function startFeedPolling () {
+  function startFeedPolling() {
     if (pollInterval) clearInterval(pollInterval)
     pollInterval = setInterval(refreshFeed, 5000)
   }

@@ -15,6 +15,8 @@ const {
   submitNote,
   hasSubmitted,
   getFeedNotes,
+  getPendingUnlockRequests,
+  approveUnlockRequest,
   getRoundMeta,
   startNewRound,
   scheduleBeReal
@@ -157,6 +159,26 @@ ipcMain.handle('feed:get', async () => {
 ipcMain.handle('feed:hasSubmitted', async () => {
   if (!pass) return false
   return hasSubmitted(pass, authorHex)
+})
+
+ipcMain.handle('feed:getPendingUnlockRequests', async () => {
+  if (!pass || !authorHex) return { ok: false, requests: [] }
+  try {
+    const requests = await getPendingUnlockRequests(pass, authorHex)
+    return { ok: true, requests }
+  } catch (e) {
+    return { ok: false, requests: [], error: e.message }
+  }
+})
+
+ipcMain.handle('feed:approveUnlockRequest', async (_e, requesterHex) => {
+  if (!pass || !authorHex) return { ok: false, error: 'Not connected' }
+  if (!encKeyPair?.privateKey) return { ok: false, error: 'Missing local encryption keys' }
+  try {
+    return await approveUnlockRequest(pass, authorHex, requesterHex, encKeyPair.privateKey)
+  } catch (e) {
+    return { ok: false, error: e.message }
+  }
 })
 
 ipcMain.handle('dev:triggerNow', async () => {

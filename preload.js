@@ -14,6 +14,8 @@ contextBridge.exposeInMainWorld('peareal', {
   submitNote: (text) => ipcRenderer.invoke('feed:submit', text),
   getFeed: () => ipcRenderer.invoke('feed:get'),
   hasSubmitted: () => ipcRenderer.invoke('feed:hasSubmitted'),
+  getPendingUnlockRequests: () => ipcRenderer.invoke('feed:getPendingUnlockRequests'),
+  approveUnlockRequest: (requesterHex) => ipcRenderer.invoke('feed:approveUnlockRequest', requesterHex),
 
   // ── Dev/test helpers ──
   triggerNow: () => ipcRenderer.invoke('dev:triggerNow'),

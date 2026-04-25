@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>PeaReal 🍐</title>
   <link rel="stylesheet" href="style.css" />
 </head>
+
 <body>
 
   <!-- ── SCREEN 1: Auth ───────────────────────────────────────── -->
@@ -72,12 +74,20 @@
         <h2>Today's moments</h2>
         <p id="feed-round-time" class="muted"></p>
       </div>
+
+      <div id="unlock-requests" class="unlock-requests hidden">
+        <div class="unlock-requests-title">Manual unlock requests</div>
+        <div id="unlock-requests-list" class="unlock-requests-list"></div>
+      </div>
+
       <div id="feed-list" class="feed-list"></div>
-      <div id="feed-empty" class="muted hidden" style="text-align:center;padding:24px">No notes yet — be the first!</div>
+      <div id="feed-empty" class="muted hidden" style="text-align:center;padding:24px">No notes yet — be the first!
+      </div>
     </div>
   </div>
 
   <div id="toast" class="toast hidden"></div>
   <script src="app.js"></script>
 </body>
+
 </html>

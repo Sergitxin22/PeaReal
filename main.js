@@ -2,7 +2,14 @@
 const { app, BrowserWindow, ipcMain, Notification } = require('electron')
 const path = require('path')
 
-const { createGroup, joinGroup, openSession, getAuthorHex, deriveGroupKey } = require('./auth/autopass')
+const {
+  createGroup,
+  joinGroup,
+  openSession,
+  getAuthorHex,
+  deriveGroupKey,
+  getEncryptionKeyPair
+} = require('./auth/autopass')
 const { watch } = require('./p2p/peer')
 const {
   submitNote,
@@ -19,11 +26,12 @@ let win = null
 let pass = null
 let groupKey = null
 let authorHex = null
+let encKeyPair = null
 let cancelTimer = null
 
 // ─── Window ───────────────────────────────────────────────────────────────────
 
-function createWindow () {
+function createWindow() {
   win = new BrowserWindow({
     width: 900,
     height: 700,
@@ -43,7 +51,7 @@ app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(
 
 // ─── BeReal trigger ───────────────────────────────────────────────────────────
 
-async function onBeRealTrigger () {
+async function onBeRealTrigger() {
   if (!pass) return
   await startNewRound(pass)
   win?.webContents.send('bereal:trigger')
@@ -63,6 +71,7 @@ ipcMain.handle('auth:create', async () => {
     pass = p
     groupKey = deriveGroupKey(pass)
     authorHex = getAuthorHex(pass)
+    encKeyPair = await getEncryptionKeyPair()
     _startWatcher()
     _startTimer()
     return { ok: true, invite, authorHex }
@@ -77,6 +86,7 @@ ipcMain.handle('auth:join', async (_e, inviteCode) => {
     pass = await joinGroup(inviteCode.trim())
     groupKey = deriveGroupKey(pass)
     authorHex = getAuthorHex(pass)
+    encKeyPair = await getEncryptionKeyPair()
     _startWatcher()
     _startTimer()
     return { ok: true, authorHex }
@@ -93,6 +103,7 @@ ipcMain.handle('auth:resume', async () => {
     pass = p
     groupKey = deriveGroupKey(pass)
     authorHex = getAuthorHex(pass)
+    encKeyPair = await getEncryptionKeyPair()
     _startWatcher()
     _startTimer()
     return { ok: true, authorHex }
@@ -104,7 +115,10 @@ ipcMain.handle('auth:resume', async () => {
 ipcMain.handle('feed:submit', async (_e, noteText) => {
   if (!pass) return { ok: false, error: 'Not connected' }
   try {
-    await submitNote(pass, noteText, groupKey, authorHex)
+    if (!encKeyPair?.publicKey) {
+      return { ok: false, error: 'Missing local encryption keys' }
+    }
+    await submitNote(pass, noteText, groupKey, authorHex, encKeyPair.publicKey)
     return { ok: true }
   } catch (e) {
     return { ok: false, error: e.message }
@@ -115,7 +129,17 @@ ipcMain.handle('feed:get', async () => {
   if (!pass) return { ok: false, notes: [] }
   try {
     const submitted = await hasSubmitted(pass, authorHex)
-    const notes = await getFeedNotes(pass, submitted, groupKey)
+    if (!encKeyPair?.publicKey || !encKeyPair?.privateKey) {
+      return { ok: false, notes: [], error: 'Missing local encryption keys' }
+    }
+    const notes = await getFeedNotes(
+      pass,
+      submitted,
+      groupKey,
+      authorHex,
+      encKeyPair.publicKey,
+      encKeyPair.privateKey
+    )
     const meta = await getRoundMeta(pass)
     return { ok: true, notes, submitted, meta }
   } catch (e) {
@@ -141,13 +165,13 @@ ipcMain.handle('dev:scheduleIn', async (_e, seconds) => {
 
 // ─── Internals ────────────────────────────────────────────────────────────────
 
-function _startWatcher () {
+function _startWatcher() {
   watch(pass, () => {
     win?.webContents.send('feed:updated')
   })
 }
 
-function _startTimer () {
+function _startTimer() {
   if (cancelTimer) cancelTimer()
   // 50s in dev, random 24h in production
   const devMs = process.env.NODE_ENV === 'production' ? undefined : 50 * 1000

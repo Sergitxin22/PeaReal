@@ -5,32 +5,41 @@ const path = require('path')
 const os = require('os')
 const fs = require('fs').promises
 const b4a = require('b4a')
+const { generateKeyPairSync } = require('crypto')
 
 let _pass = null
 let _store = null
 let _storePromise = null
 
-function storagePath () {
+function storagePath() {
   const userSlot = process.env.PEAREAL_USER || 'default'
   return path.join(os.homedir(), '.peareal', userSlot)
 }
 
-function sessionMarkerPath () {
+function sessionMarkerPath() {
   return path.join(storagePath(), '.session')
 }
 
-async function saveSessionMarker () {
+function encPublicKeyPath() {
+  return path.join(storagePath(), 'enc-public.pem')
+}
+
+function encPrivateKeyPath() {
+  return path.join(storagePath(), 'enc-private.pem')
+}
+
+async function saveSessionMarker() {
   const p = storagePath()
   await fs.mkdir(p, { recursive: true })
   await fs.writeFile(sessionMarkerPath(), String(Date.now()))
 }
 
-async function hasSessionMarker () {
+async function hasSessionMarker() {
   try { await fs.access(sessionMarkerPath()); return true }
   catch { return false }
 }
 
-async function makeStore () {
+async function makeStore() {
   if (_store) return _store
   if (!_storePromise) {
     _storePromise = (async () => {
@@ -45,7 +54,7 @@ async function makeStore () {
   return _storePromise
 }
 
-async function createGroup () {
+async function createGroup() {
   const store = await makeStore()
   const pass = new Autopass(store)
   await pass.ready()
@@ -55,7 +64,7 @@ async function createGroup () {
   return { pass, invite }
 }
 
-async function joinGroup (inviteCode) {
+async function joinGroup(inviteCode) {
   const store = await makeStore()
   const pairer = Autopass.pair(store, inviteCode.trim())
   await pairer.ready()
@@ -66,7 +75,7 @@ async function joinGroup (inviteCode) {
   return pass
 }
 
-async function openSession () {
+async function openSession() {
   if (!(await hasSessionMarker())) return null
   try {
     const store = await makeStore()
@@ -80,16 +89,16 @@ async function openSession () {
   }
 }
 
-function getPass () { return _pass }
+function getPass() { return _pass }
 
-function getAuthorHex (pass) {
+function getAuthorHex(pass) {
   try {
     const key = pass.writerKey || pass.key
     return b4a.toString(key, 'hex').slice(0, 16)
   } catch { return 'unknown' }
 }
 
-function deriveGroupKey (pass) {
+function deriveGroupKey(pass) {
   const crypto = require('hypercore-crypto')
   // encryptionKey is the shared secret negotiated during pairing —
   // it is IDENTICAL on every peer, so all members encrypt/decrypt with the same key.
@@ -98,4 +107,36 @@ function deriveGroupKey (pass) {
   return crypto.hash(sharedKey)
 }
 
-module.exports = { createGroup, joinGroup, openSession, getPass, getAuthorHex, deriveGroupKey }
+async function getEncryptionKeyPair() {
+  const p = storagePath()
+  await fs.mkdir(p, { recursive: true })
+
+  try {
+    const [publicKey, privateKey] = await Promise.all([
+      fs.readFile(encPublicKeyPath(), 'utf8'),
+      fs.readFile(encPrivateKeyPath(), 'utf8')
+    ])
+    return { publicKey, privateKey }
+  } catch {
+    const pair = generateKeyPairSync('rsa', {
+      modulusLength: 2048,
+      publicKeyEncoding: { type: 'spki', format: 'pem' },
+      privateKeyEncoding: { type: 'pkcs8', format: 'pem' }
+    })
+    await Promise.all([
+      fs.writeFile(encPublicKeyPath(), pair.publicKey, 'utf8'),
+      fs.writeFile(encPrivateKeyPath(), pair.privateKey, 'utf8')
+    ])
+    return { publicKey: pair.publicKey, privateKey: pair.privateKey }
+  }
+}
+
+module.exports = {
+  createGroup,
+  joinGroup,
+  openSession,
+  getPass,
+  getAuthorHex,
+  deriveGroupKey,
+  getEncryptionKeyPair
+}

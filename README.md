@@ -90,3 +90,13 @@ If PowerShell policy is restrictive:
 npm.cmd install
 npm.cmd start
 ```
+
+## Local UI Cluster (Interactive)
+
+Launch multiple Electron windows (one per local peer):
+
+```bash
+npm.cmd run cluster:local
+```
+
+The script asks how many peers to open and launches isolated users (`user1`, `user2`, ...).

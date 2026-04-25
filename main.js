@@ -20,6 +20,13 @@ const {
   scheduleBeReal
 } = require('./p2p/feed')
 
+// Isolate Chromium profile/cache per local node to avoid cache lock collisions
+// when running multiple Electron instances on Windows.
+const userSlot = process.env.PEAREAL_USER || 'default'
+const scopedUserData = path.join(app.getPath('appData'), 'PeaReal', userSlot)
+app.setPath('userData', scopedUserData)
+app.setPath('sessionData', path.join(scopedUserData, 'Session'))
+
 // ─── State ────────────────────────────────────────────────────────────────────
 
 let win = null

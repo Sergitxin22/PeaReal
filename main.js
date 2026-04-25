@@ -124,10 +124,10 @@ ipcMain.handle('auth:resume', async () => {
 ipcMain.handle('feed:submit', async (_e, noteText) => {
   if (!pass) return { ok: false, error: 'Not connected' }
   try {
-    if (!encKeyPair?.publicKey) {
+    if (!encKeyPair?.publicKey || !encKeyPair?.privateKey) {
       return { ok: false, error: 'Missing local encryption keys' }
     }
-    await submitNote(pass, noteText, groupKey, authorHex, encKeyPair.publicKey)
+    await submitNote(pass, noteText, groupKey, authorHex, encKeyPair.publicKey, encKeyPair.privateKey)
     return { ok: true }
   } catch (e) {
     return { ok: false, error: e.message }

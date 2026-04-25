@@ -27,6 +27,77 @@ function metaKey(roundId) { return `round:${roundId}:meta` }
 function unlockReqKey(roundId, authorHex, requesterHex) { return `round:${roundId}:unlockReq:${authorHex}:${requesterHex}` }
 function unlockGrantKey(roundId, authorHex, requesterHex) { return `round:${roundId}:unlockGrant:${authorHex}:${requesterHex}` }
 
+function parseAuthorHexFromNoteKey(key) {
+  try {
+    const parts = String(key).split(':')
+    return parts[parts.length - 1] || null
+  } catch {
+    return null
+  }
+}
+
+function hashCommit(roundId, plaintext, saltHex) {
+  return crypto
+    .createHash('sha256')
+    .update(`noteCommit|${roundId}|${plaintext}|${saltHex}`, 'utf8')
+    .digest('hex')
+}
+
+function noteSignPayload(roundId, authorHex, commitment, ts, nonceHex) {
+  return `note|${roundId}|${authorHex}|${commitment}|${ts}|${nonceHex}`
+}
+
+function signNote(privateKeyPem, roundId, authorHex, commitment, ts, nonceHex) {
+  const payload = noteSignPayload(roundId, authorHex, commitment, ts, nonceHex)
+  return crypto.sign('sha256', Buffer.from(payload, 'utf8'), privateKeyPem).toString('base64')
+}
+
+function verifyNoteSignature(publicKeyPem, roundId, authorHex, commitment, ts, nonceHex, signatureB64) {
+  try {
+    const payload = noteSignPayload(roundId, authorHex, commitment, ts, nonceHex)
+    return crypto.verify(
+      'sha256',
+      Buffer.from(payload, 'utf8'),
+      publicKeyPem,
+      Buffer.from(signatureB64, 'base64')
+    )
+  } catch {
+    return false
+  }
+}
+
+function unlockReqPayload(roundId, toAuthorHex, requesterHex, ts) {
+  return `unlockReq|${roundId}|${toAuthorHex}|${requesterHex}|${ts}`
+}
+
+function signUnlockReq(privateKeyPem, roundId, toAuthorHex, requesterHex, ts) {
+  const payload = unlockReqPayload(roundId, toAuthorHex, requesterHex, ts)
+  return crypto.sign('sha256', Buffer.from(payload, 'utf8'), privateKeyPem).toString('base64')
+}
+
+function verifyUnlockReqSignature(publicKeyPem, roundId, toAuthorHex, requesterHex, ts, signatureB64) {
+  try {
+    const payload = unlockReqPayload(roundId, toAuthorHex, requesterHex, ts)
+    return crypto.verify(
+      'sha256',
+      Buffer.from(payload, 'utf8'),
+      publicKeyPem,
+      Buffer.from(signatureB64, 'base64')
+    )
+  } catch {
+    return false
+  }
+}
+
+function parseRequesterHexFromReqKey(key) {
+  try {
+    const parts = String(key).split(':')
+    return parts[parts.length - 1] || null
+  } catch {
+    return null
+  }
+}
+
 function encryptContent(plaintext, contentKey) {
   ensureXChaChaAvailable()
   const msg = b4a.from(plaintext, 'utf8')
@@ -112,11 +183,26 @@ async function wipeRound(pass, roundId) {
   }
 }
 
-async function submitNote(pass, noteText, _groupKey, authorHex, authorPublicKeyPem) {
+async function submitNote(pass, noteText, _groupKey, authorHex, authorPublicKeyPem, authorPrivateKeyPem) {
   const roundId = await getOrCreateCurrentRound(pass)
+
+  const existing = await get(pass, noteKey(roundId, authorHex))
+  if (existing) {
+    throw new Error('Already submitted in this round')
+  }
 
   const contentKey = b4a.alloc(32)
   sodium.randombytes_buf(contentKey)
+
+  const ts = Date.now()
+  const nonceRaw = b4a.alloc(16)
+  const saltRaw = b4a.alloc(16)
+  sodium.randombytes_buf(nonceRaw)
+  sodium.randombytes_buf(saltRaw)
+  const noteNonceHex = b4a.toString(nonceRaw, 'hex')
+  const commitSaltHex = b4a.toString(saltRaw, 'hex')
+  const commitment = hashCommit(roundId, noteText, commitSaltHex)
+  const signature = signNote(authorPrivateKeyPem, roundId, authorHex, commitment, ts, noteNonceHex)
 
   const encryptedPayload = encryptContent(noteText, contentKey)
   const selfWrappedKey = wrapContentKeyForPeer(contentKey, authorPublicKeyPem)
@@ -125,8 +211,13 @@ async function submitNote(pass, noteText, _groupKey, authorHex, authorPublicKeyP
     ...encryptedPayload,
     author: authorHex,
     authorPublicKeyPem,
-    ts: Date.now(),
-    wrapAlg: WRAP_ALG
+    ts,
+    wrapAlg: WRAP_ALG,
+    commitSaltHex,
+    commitment,
+    noteNonceHex,
+    signature,
+    sigAlg: 'rsa-sha256'
   })
 
   await put(pass, unlockGrantKey(roundId, authorHex, authorHex), {
@@ -134,7 +225,7 @@ async function submitNote(pass, noteText, _groupKey, authorHex, authorPublicKeyP
     to: authorHex,
     wrappedKey: selfWrappedKey,
     wrapAlg: WRAP_ALG,
-    ts: Date.now()
+    ts
   })
 
   return roundId
@@ -158,12 +249,37 @@ async function getPendingUnlockRequests(pass, localAuthorHex) {
 
   for (const reqEntry of requests) {
     const req = reqEntry.value
+    const requesterHexFromPath = parseRequesterHexFromReqKey(reqEntry.key)
     const requesterHex = req?.from
     const requesterPub = req?.requesterPublicKeyPem
-    if (!requesterHex || !requesterPub) continue
+    if (!requesterHex || !requesterPub || !requesterHexFromPath) continue
+    if (requesterHex !== requesterHexFromPath) continue
+    if (req.to !== localAuthorHex) continue
+
+    const signatureOk = verifyUnlockReqSignature(
+      requesterPub,
+      roundId,
+      localAuthorHex,
+      requesterHex,
+      req.ts,
+      req.signature
+    )
+    if (!signatureOk) continue
 
     const requesterSubmitted = await get(pass, noteKey(roundId, requesterHex))
     if (!requesterSubmitted) continue
+    if (requesterSubmitted.authorPublicKeyPem !== requesterPub) continue
+
+    const requesterNoteSigOk = verifyNoteSignature(
+      requesterSubmitted.authorPublicKeyPem,
+      roundId,
+      requesterSubmitted.author,
+      requesterSubmitted.commitment,
+      requesterSubmitted.ts,
+      requesterSubmitted.noteNonceHex,
+      requesterSubmitted.signature
+    )
+    if (!requesterNoteSigOk) continue
 
     const grantPath = unlockGrantKey(roundId, localAuthorHex, requesterHex)
     const existingGrant = await get(pass, grantPath)
@@ -187,9 +303,36 @@ async function approveUnlockRequest(pass, localAuthorHex, requesterHex, localPri
 
   const req = await get(pass, unlockReqKey(roundId, localAuthorHex, requesterHex))
   if (!req?.requesterPublicKeyPem) return { ok: false, error: 'No pending request for this peer' }
+  if (req.to !== localAuthorHex || req.from !== requesterHex) return { ok: false, error: 'Malformed request' }
+
+  const signatureOk = verifyUnlockReqSignature(
+    req.requesterPublicKeyPem,
+    roundId,
+    localAuthorHex,
+    requesterHex,
+    req.ts,
+    req.signature
+  )
+  if (!signatureOk) return { ok: false, error: 'Invalid request signature' }
 
   const requesterSubmitted = await get(pass, noteKey(roundId, requesterHex))
   if (!requesterSubmitted) return { ok: false, error: 'Requester has not submitted yet' }
+  if (requesterSubmitted.authorPublicKeyPem !== req.requesterPublicKeyPem) {
+    return { ok: false, error: 'Requester public key does not match submitted note' }
+  }
+
+  const requesterNoteSigOk = verifyNoteSignature(
+    requesterSubmitted.authorPublicKeyPem,
+    roundId,
+    requesterSubmitted.author,
+    requesterSubmitted.commitment,
+    requesterSubmitted.ts,
+    requesterSubmitted.noteNonceHex,
+    requesterSubmitted.signature
+  )
+  if (!requesterNoteSigOk) {
+    return { ok: false, error: 'Requester note signature is invalid' }
+  }
 
   const grantPath = unlockGrantKey(roundId, localAuthorHex, requesterHex)
   const existingGrant = await get(pass, grantPath)
@@ -212,18 +355,23 @@ async function approveUnlockRequest(pass, localAuthorHex, requesterHex, localPri
   return { ok: true, approved: true }
 }
 
-async function ensureUnlockRequestForAuthor(pass, roundId, localAuthorHex, targetAuthorHex, localPublicKeyPem) {
+async function ensureUnlockRequestForAuthor(pass, roundId, localAuthorHex, targetAuthorHex, localPublicKeyPem, localPrivateKeyPem) {
   if (targetAuthorHex === localAuthorHex) return
 
   const reqPath = unlockReqKey(roundId, targetAuthorHex, localAuthorHex)
   const existingReq = await get(pass, reqPath)
   if (existingReq) return
 
+  const ts = Date.now()
+  const signature = signUnlockReq(localPrivateKeyPem, roundId, targetAuthorHex, localAuthorHex, ts)
+
   await put(pass, reqPath, {
     from: localAuthorHex,
     to: targetAuthorHex,
     requesterPublicKeyPem: localPublicKeyPem,
-    ts: Date.now()
+    ts,
+    signature,
+    sigAlg: 'rsa-sha256'
   })
 }
 
@@ -243,16 +391,47 @@ async function getFeedNotes(pass, localUserSubmitted, _groupKey, localAuthorHex,
   }
 
   const results = []
-  for (const { value: note } of notes) {
+  for (const { key, value: note } of notes) {
     if (!note?.author) continue
 
-    await ensureUnlockRequestForAuthor(pass, roundId, localAuthorHex, note.author, localPublicKeyPem)
+    const authorFromPath = parseAuthorHexFromNoteKey(key)
+    if (!authorFromPath || authorFromPath !== note.author) {
+      results.push({ author: note.author || 'unknown', content: null, ts: note.ts, hidden: true })
+      continue
+    }
+
+    const noteSigOk = verifyNoteSignature(
+      note.authorPublicKeyPem,
+      roundId,
+      note.author,
+      note.commitment,
+      note.ts,
+      note.noteNonceHex,
+      note.signature
+    )
+    if (!noteSigOk) {
+      results.push({ author: note.author, content: null, ts: note.ts, hidden: true })
+      continue
+    }
+
+    await ensureUnlockRequestForAuthor(pass, roundId, localAuthorHex, note.author, localPublicKeyPem, localPrivateKeyPem)
 
     const grant = await get(pass, unlockGrantKey(roundId, note.author, localAuthorHex))
+    const mutualGrant = await get(pass, unlockGrantKey(roundId, localAuthorHex, note.author))
     let content = null
-    if (grant?.wrappedKey) {
+    if (note.author === localAuthorHex && grant?.wrappedKey) {
       const contentKey = unwrapContentKey(grant.wrappedKey, localPrivateKeyPem)
       if (contentKey) content = decryptContent(note.encrypted, note.nonce, contentKey)
+    } else if (grant?.wrappedKey && mutualGrant?.wrappedKey) {
+      const contentKey = unwrapContentKey(grant.wrappedKey, localPrivateKeyPem)
+      if (contentKey) content = decryptContent(note.encrypted, note.nonce, contentKey)
+    }
+
+    if (content !== null) {
+      const computedCommit = hashCommit(roundId, content, note.commitSaltHex)
+      if (computedCommit !== note.commitment) {
+        content = null
+      }
     }
 
     if (content === null) {

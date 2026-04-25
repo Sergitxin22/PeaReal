@@ -214,7 +214,7 @@
       ${note.hidden
         ? `<div class="note-locked">
              <span class="lock-icon">🔒</span>
-             <span class="lock-text">Encrypted — post your moment to reveal</span>
+             <span class="lock-text">Encrypted — requires mutual unlock approval</span>
              <div class="lock-cipher">${generateFakeCipherPreview()}</div>
            </div>`
         : `<div class="note-content">${escapeHtml(note.content)}</div>`
@@ -251,7 +251,7 @@
     if (!res?.ok) { showError(submitError, res?.error || 'Submission failed'); return }
     noteInput.value = ''
     charCount.textContent = '0'
-    showToast('Note submitted! 🍐 Revealing…')
+    showToast('Note submitted! Awaiting mutual approvals.')
     await refreshFeed()
   })
 

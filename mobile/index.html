@@ -1,0 +1,851 @@
+<!doctype html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PeaReal Mobile</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap"
+        rel="stylesheet" />
+    <style>
+        :root {
+            --bg-0: #08110f;
+            --bg-1: #10221d;
+            --surface: rgba(22, 36, 31, 0.88);
+            --surface-2: rgba(14, 24, 20, 0.9);
+            --border: #335146;
+            --accent: #d7ff62;
+            --accent-2: #8ef7b1;
+            --text: #eef6f2;
+            --muted: #9eb3ab;
+            --danger: #ff6b6b;
+            --ok: #8ef7b1;
+            --radius: 16px;
+            --shadow: 0 14px 32px rgba(0, 0, 0, 0.28);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: 'Space Grotesk', 'Segoe UI', sans-serif;
+            background:
+                radial-gradient(1100px 520px at 12% -12%, #214336 0%, transparent 60%),
+                radial-gradient(900px 460px at 92% 8%, #1f3448 0%, transparent 58%),
+                linear-gradient(140deg, var(--bg-0), var(--bg-1));
+            color: var(--text);
+            padding: 16px;
+            min-height: 100vh;
+        }
+
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 14px;
+            margin-bottom: 12px;
+            box-shadow: var(--shadow);
+            backdrop-filter: blur(10px);
+            animation: cardIn .22s ease-out;
+        }
+
+        .title {
+            font-size: 1.05rem;
+            font-weight: 700;
+            margin: 0 0 6px;
+            letter-spacing: .01em;
+        }
+
+        .muted {
+            color: var(--muted);
+            font-size: .84rem;
+            line-height: 1.35;
+        }
+
+        .pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            padding: 5px 10px;
+            font-size: .76rem;
+            color: var(--muted);
+            background: var(--surface-2);
+            margin-top: 8px;
+        }
+
+        .row {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-top: 10px;
+        }
+
+        input[type="text"] {
+            width: 100%;
+            background: #101a16;
+            border: 1px solid var(--border);
+            color: var(--text);
+            border-radius: 12px;
+            padding: 11px 12px;
+            font-size: .9rem;
+            outline: none;
+            transition: border-color .15s ease, box-shadow .15s ease;
+        }
+
+        input[type="text"]:focus {
+            border-color: var(--accent-2);
+            box-shadow: 0 0 0 2px rgba(142, 247, 177, 0.18);
+        }
+
+        button {
+            border: 1px solid var(--border);
+            background: #121b17;
+            color: var(--text);
+            padding: 10px 12px;
+            border-radius: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform .08s ease, border-color .15s ease, background .15s ease;
+        }
+
+        button:active {
+            transform: translateY(1px);
+        }
+
+        button.primary {
+            background: var(--accent);
+            color: #182218;
+            border-color: #bce952;
+        }
+
+        button:hover:not(:disabled) {
+            border-color: var(--accent-2);
+        }
+
+        button:disabled {
+            opacity: .45;
+            cursor: not-allowed;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+            box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.04);
+        }
+
+        .ok {
+            background: var(--ok);
+        }
+
+        .ko {
+            background: var(--danger);
+        }
+
+        #preview {
+            width: 100%;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            margin-top: 10px;
+            display: none;
+            max-height: 340px;
+            object-fit: cover;
+            background: #000;
+        }
+
+        .msg,
+        #msg {
+            margin-top: 10px;
+            font-size: .88rem;
+            border-radius: 10px;
+            padding: 8px 10px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .feed-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .rooms-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .room-item {
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            background: var(--surface-2);
+            padding: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .room-name {
+            font-size: .9rem;
+            font-weight: 700;
+        }
+
+        .room-sub {
+            color: var(--muted);
+            font-size: .76rem;
+        }
+
+        .feed-item {
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            background: var(--surface-2);
+            padding: 10px;
+        }
+
+        .feed-item-header {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            font-size: .82rem;
+            color: var(--muted);
+            margin-bottom: 8px;
+        }
+
+        .feed-image {
+            width: 100%;
+            max-height: 320px;
+            object-fit: cover;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            background: #000;
+        }
+
+        .feed-locked {
+            border: 1px dashed var(--border);
+            border-radius: 10px;
+            padding: 10px;
+            color: var(--muted);
+            font-size: .88rem;
+        }
+
+        .invite-wrap {
+            position: relative;
+            flex: 1 1 auto;
+        }
+
+        .invite-wrap input[type="text"] {
+            padding-right: 44px;
+        }
+
+        .copy-invite-btn {
+            position: absolute;
+            top: 7px;
+            right: 8px;
+            width: 30px;
+            height: 30px;
+            padding: 0;
+            border-radius: 9px;
+            border: 1px solid var(--border);
+            background: #15201b;
+            color: var(--text);
+            font-size: 16px;
+            line-height: 1;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .danger {
+            color: var(--danger);
+            border-color: rgba(255, 107, 107, 0.35);
+            background: rgba(255, 107, 107, 0.1);
+        }
+
+        .success {
+            color: var(--ok);
+            border-color: rgba(142, 247, 177, 0.35);
+            background: rgba(142, 247, 177, 0.1);
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        @keyframes cardIn {
+            from {
+                opacity: 0;
+                transform: translateY(6px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @media (max-width: 420px) {
+            body {
+                padding: 12px;
+            }
+
+            .row {
+                gap: 6px;
+            }
+
+            button {
+                flex: 1 1 auto;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="card">
+        <p class="title">PeaReal Mobile</p>
+        <p class="muted"><span id="dot" class="status-dot ko"></span><span id="conn">Conectando...</span></p>
+        <p class="muted" id="who"></p>
+        <div class="row" id="roomTopActions">
+            <button id="btnGoHome">Ir al home</button>
+            <button id="btnLeaveRoom">Abandonar sala</button>
+        </div>
+    </div>
+
+    <div class="card" id="authCard">
+        <p class="title">Home</p>
+        <p class="muted">Crea una sala, unete por invite o abre una de tus salas guardadas.</p>
+        <div class="row">
+            <input id="roomNameCreate" type="text" maxlength="48" placeholder="Nombre de la sala (opcional)" />
+        </div>
+        <div class="row">
+            <button id="btnCreate" class="primary">Crear grupo</button>
+        </div>
+        <div class="row">
+            <div class="invite-wrap">
+                <input id="invite" type="text" placeholder="Pega invite code" />
+                <button id="btnCopyInvite" class="copy-invite-btn hidden" type="button" title="Copiar codigo"
+                    aria-label="Copiar codigo">&#128203;</button>
+            </div>
+            <button id="btnJoin">Unirme</button>
+        </div>
+        <p class="muted" style="margin-top:10px">Tus salas</p>
+        <div id="roomsList" class="rooms-list"></div>
+        <div id="roomsEmpty" class="muted">No hay salas guardadas.</div>
+    </div>
+
+    <div class="card hidden" id="cameraCard">
+        <p class="title">Camara y envio cifrado</p>
+        <p class="muted">Solo disponible cuando ya estas conectado a un grupo.</p>
+        <input id="file" type="file" accept="image/png,image/jpeg,image/webp" capture="environment" class="hidden" />
+        <img id="preview" alt="preview" />
+        <div class="row">
+            <button id="btnOpenCamera" class="primary">Abrir camara</button>
+            <button id="btnPickGallery">Galeria</button>
+            <button id="btnUpload" class="primary" disabled>Enviar foto cifrada</button>
+        </div>
+        <div id="msg" class="muted"></div>
+    </div>
+
+    <div class="card hidden" id="feedCard">
+        <p class="title">Feed de la ronda</p>
+        <p id="feedMeta" class="muted">Sin datos.</p>
+        <div id="feedList" class="feed-list"></div>
+    </div>
+
+    <script>
+        let ws
+        let seq = 0
+        const pending = new Map()
+        let imageDataUrl = null
+        let refreshTimer = null
+        const appState = {
+            wsConnected: false,
+            groupConnected: false,
+            roomId: null,
+            roomName: null,
+            authorHex: '---',
+            manualHomeView: true
+        }
+
+        const $ = (id) => document.getElementById(id)
+        const dot = $('dot')
+        const conn = $('conn')
+        const who = $('who')
+        const roomNameCreate = $('roomNameCreate')
+        const invite = $('invite')
+        const btnCreate = $('btnCreate')
+        const btnCopyInvite = $('btnCopyInvite')
+        const btnJoin = $('btnJoin')
+        const roomsList = $('roomsList')
+        const roomsEmpty = $('roomsEmpty')
+        const roomTopActions = $('roomTopActions')
+        const authCard = $('authCard')
+        const cameraCard = $('cameraCard')
+        const feedCard = $('feedCard')
+        const file = $('file')
+        const preview = $('preview')
+        const btnOpenCamera = $('btnOpenCamera')
+        const btnPickGallery = $('btnPickGallery')
+        const btnUpload = $('btnUpload')
+        const btnGoHome = $('btnGoHome')
+        const btnLeaveRoom = $('btnLeaveRoom')
+        const msg = $('msg')
+        const feedMeta = $('feedMeta')
+        const feedList = $('feedList')
+
+        function fmtTime(ts) {
+            if (!ts) return '--'
+            try {
+                return new Date(ts).toLocaleTimeString()
+            } catch {
+                return '--'
+            }
+        }
+
+        function esc(text) {
+            return String(text || '').replace(/[&<>"']/g, (ch) => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;'
+            }[ch]))
+        }
+
+        function isImageDataUrl(value) {
+            return typeof value === 'string' && /^data:image\/(png|jpeg|jpg|webp);base64,/i.test(value)
+        }
+
+        function updateInviteCopyState() {
+            const hasInvite = Boolean((invite?.value || '').trim())
+            if (btnCopyInvite) {
+                btnCopyInvite.disabled = !hasInvite
+                btnCopyInvite.classList.toggle('hidden', !hasInvite)
+            }
+        }
+
+        async function copyInviteToClipboard() {
+            const value = (invite?.value || '').trim()
+            if (!value) {
+                setMessage('No hay codigo para copiar.', 'danger')
+                return
+            }
+
+            try {
+                await navigator.clipboard.writeText(value)
+            } catch {
+                invite.focus()
+                invite.select()
+                const ok = document.execCommand('copy')
+                if (!ok) throw new Error('Copy failed')
+            }
+            setMessage('Invite copiado al portapapeles.', 'success')
+        }
+
+        function renderRooms(rooms, currentId) {
+            if (!roomsList || !roomsEmpty) return
+            const safeRooms = Array.isArray(rooms) ? rooms : []
+            roomsList.innerHTML = ''
+
+            if (safeRooms.length === 0) {
+                roomsEmpty.textContent = 'No hay salas guardadas todavia.'
+                roomsEmpty.classList.remove('hidden')
+                return
+            }
+
+            roomsEmpty.classList.add('hidden')
+            for (const room of safeRooms) {
+                const isCurrent = room?.id && room.id === currentId
+                const item = document.createElement('div')
+                item.className = 'room-item'
+                item.innerHTML = `
+                    <div>
+                        <div class="room-name">${esc(room?.name || 'Sala')}</div>
+                        <div class="room-sub">${isCurrent ? 'Activa' : 'Guardada'} · #${esc(String(room?.id || '').slice(0, 8))}</div>
+                    </div>
+                    <button data-open-room="${esc(room?.id || '')}">${isCurrent ? 'Abrir' : 'Entrar'}</button>
+                `
+                roomsList.appendChild(item)
+            }
+        }
+
+        async function refreshRooms() {
+            const r = await call('rooms:list')
+            if (!r.ok) throw new Error(r.error || 'No se pudieron cargar las salas')
+            renderRooms(r.rooms || [], r.current?.id || appState.roomId)
+        }
+
+        function renderFeed(notes, submitted) {
+            if (!feedList) return
+            if (!Array.isArray(notes) || notes.length === 0) {
+                feedList.innerHTML = '<div class="feed-locked">Aun no hay publicaciones en esta ronda.</div>'
+                return
+            }
+
+            const items = notes
+                .sort((a, b) => (a?.ts || 0) - (b?.ts || 0))
+                .map((n) => {
+                    const who = `#${String(n?.author || '').slice(0, 8)}`
+                    const when = fmtTime(n?.ts)
+                    const locked = n?.hidden || !isImageDataUrl(n?.content)
+                    const body = locked
+                        ? '<div class="feed-locked">Bloqueado. Esperando desbloqueo mutuo con ese peer.</div>'
+                        : `<img class="feed-image" src="${esc(n.content)}" alt="foto ${esc(who)}" />`
+
+                    return `<div class="feed-item"><div class="feed-item-header"><span>${esc(who)}</span><span>${esc(when)}</span></div>${body}</div>`
+                })
+                .join('')
+
+            feedList.innerHTML = items
+            if (feedMeta) {
+                feedMeta.textContent = `Publicaciones: ${notes.length} | Tu envio: ${submitted ? 'OK' : 'pendiente'}`
+            }
+        }
+
+        async function refreshFeed() {
+            if (!appState.groupConnected) {
+                if (feedList) feedList.innerHTML = ''
+                if (feedMeta) feedMeta.textContent = 'Conectate a un grupo para ver el feed.'
+                return
+            }
+
+            const r = await call('feed:get')
+            if (!r.ok) throw new Error(r.error || 'No se pudo obtener el feed')
+            renderFeed(r.notes || [], Boolean(r.submitted))
+        }
+
+        async function syncAll() {
+            await refreshStatus()
+            await refreshRooms()
+            await refreshFeed()
+        }
+
+        function updatePresenceText() {
+            const inHomeView = !appState.groupConnected || appState.manualHomeView
+            const peerLabel = `Peer: #${String(appState.authorHex || '---').slice(0, 8)}`
+            if (inHomeView) {
+                who.textContent = `${peerLabel} | Home`
+                return
+            }
+            who.textContent = `${peerLabel} | Sala: ${appState.roomName || 'sin nombre'}`
+        }
+
+        function setControls() {
+            const canUseAuth = appState.wsConnected
+            const canUpload = appState.wsConnected && appState.groupConnected && Boolean(imageDataUrl)
+            const showHome = !appState.groupConnected || appState.manualHomeView
+
+            btnCreate.disabled = !canUseAuth
+            btnJoin.disabled = !canUseAuth
+            roomNameCreate.disabled = !canUseAuth
+            invite.disabled = !canUseAuth
+            updateInviteCopyState()
+
+            file.disabled = !(appState.wsConnected && appState.groupConnected)
+            btnOpenCamera.disabled = !(appState.wsConnected && appState.groupConnected)
+            btnPickGallery.disabled = !(appState.wsConnected && appState.groupConnected)
+            btnUpload.disabled = !canUpload
+            btnGoHome.disabled = !(appState.wsConnected && appState.groupConnected)
+            btnGoHome.classList.toggle('hidden', showHome)
+            btnLeaveRoom.disabled = !(appState.wsConnected && appState.groupConnected)
+
+            if (cameraCard) {
+                cameraCard.classList.toggle('hidden', !appState.groupConnected || showHome)
+            }
+            if (feedCard) {
+                feedCard.classList.toggle('hidden', !appState.groupConnected || showHome)
+            }
+            if (roomTopActions) {
+                roomTopActions.classList.toggle('hidden', !appState.groupConnected || showHome)
+            }
+            if (authCard) {
+                authCard.classList.toggle('hidden', !showHome)
+            }
+
+            updatePresenceText()
+        }
+
+        function setConn(ok, text) {
+            dot.className = `status-dot ${ok ? 'ok' : 'ko'}`
+            conn.textContent = text
+        }
+
+        function setMessage(text, kind = 'muted') {
+            msg.className = kind
+            msg.textContent = text
+        }
+
+        function call(action, payload = {}) {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                return Promise.reject(new Error('WebSocket desconectado'))
+            }
+            const id = `${++seq}`
+            ws.send(JSON.stringify({ id, action, payload }))
+            return new Promise((resolve, reject) => {
+                pending.set(id, {
+                    resolve, reject, t: setTimeout(() => {
+                        pending.delete(id)
+                        reject(new Error('Timeout'))
+                    }, 15000)
+                })
+            })
+        }
+
+        function onStatus(data) {
+            const connected = data?.connected
+            appState.groupConnected = Boolean(connected)
+            appState.authorHex = data?.authorHex || '---'
+            appState.roomName = data?.room?.name || null
+            appState.roomId = data?.room?.id || null
+            if (!appState.groupConnected) {
+                appState.manualHomeView = true
+            }
+            setConn(true, `Conectado (${location.host})`)
+            setControls()
+        }
+
+        async function refreshStatus() {
+            const r = await call('status:get')
+            onStatus(r.data)
+        }
+
+        async function runAction(button, action) {
+            const prev = button?.textContent || ''
+            if (button) {
+                button.disabled = true
+                button.textContent = '...'
+            }
+            try {
+                return await action()
+            } finally {
+                if (button) {
+                    button.textContent = prev
+                    setControls()
+                }
+            }
+        }
+
+        function connect() {
+            const proto = location.protocol === 'https:' ? 'wss' : 'ws'
+            ws = new WebSocket(`${proto}://${location.host}/ws`)
+
+            ws.onopen = async () => {
+                appState.wsConnected = true
+                setConn(true, `Conectado (${location.host})`)
+                setControls()
+                if (refreshTimer) clearInterval(refreshTimer)
+                refreshTimer = setInterval(() => {
+                    if (appState.wsConnected) syncAll().catch(() => { })
+                }, 5000)
+                try { await syncAll() } catch { }
+            }
+            ws.onclose = () => {
+                appState.wsConnected = false
+                appState.groupConnected = false
+                setConn(false, 'Desconectado. Reintentando...')
+                setControls()
+                if (refreshTimer) {
+                    clearInterval(refreshTimer)
+                    refreshTimer = null
+                }
+                setTimeout(connect, 1200)
+            }
+            ws.onerror = () => {
+                appState.wsConnected = false
+                setConn(false, 'Error de conexión')
+                setControls()
+            }
+            ws.onmessage = (ev) => {
+                let m
+                try { m = JSON.parse(ev.data) } catch { return }
+
+                if (m.type === 'status') {
+                    onStatus(m.data)
+                    return
+                }
+
+                if (m.type === 'event' && m.event === 'feed:updated') {
+                    setMessage('Feed actualizado. Sincronizando...', 'muted')
+                    syncAll().catch(() => { })
+                    return
+                }
+
+                if (m.type === 'event' && m.event === 'bereal:trigger') {
+                    setMessage('Nuevo BeReal activo. Puedes enviar foto.', 'success')
+                    syncAll().catch(() => { })
+                    return
+                }
+
+                if (m.type === 'response' && m.id) {
+                    const p = pending.get(m.id)
+                    if (!p) return
+                    pending.delete(m.id)
+                    clearTimeout(p.t)
+                    if (m.ok) p.resolve(m)
+                    else p.reject(new Error(m.error || 'Request failed'))
+                }
+            }
+        }
+
+        btnCreate.addEventListener('click', async () => {
+            try {
+                await runAction(btnCreate, async () => {
+                    const roomName = roomNameCreate?.value?.trim() || ''
+                    const r = await call('auth:create', { roomName })
+                    if (invite && r.invite) invite.value = r.invite
+                    updateInviteCopyState()
+                    appState.manualHomeView = true
+                    setMessage(`Grupo creado${roomName ? ` (${roomName})` : ''}. Copia el invite para compartir.`, 'success')
+                    await syncAll()
+                })
+            } catch (e) {
+                setMessage(e.message, 'danger')
+            }
+        })
+
+        btnJoin.addEventListener('click', async () => {
+            try {
+                await runAction(btnJoin, async () => {
+                    const r = await call('auth:join', { inviteCode: invite.value.trim() })
+                    appState.manualHomeView = false
+                    setMessage(`Unido al grupo como #${String(r.authorHex || '').slice(0, 8)}`, 'success')
+                    await syncAll()
+                })
+            } catch (e) {
+                setMessage(e.message, 'danger')
+            }
+        })
+
+        invite?.addEventListener('input', () => {
+            updateInviteCopyState()
+        })
+
+        btnCopyInvite?.addEventListener('click', async () => {
+            try {
+                await copyInviteToClipboard()
+            } catch (e) {
+                setMessage(e.message || 'No se pudo copiar.', 'danger')
+            }
+        })
+
+        roomsList?.addEventListener('click', async (event) => {
+            const rawTarget = event.target
+            if (!(rawTarget instanceof HTMLElement)) return
+            const target = rawTarget.closest('[data-open-room]')
+            if (!(target instanceof HTMLElement)) return
+            const roomId = target.getAttribute('data-open-room')
+            if (!roomId) return
+
+            if (roomId === appState.roomId) {
+                appState.manualHomeView = false
+                setControls()
+                setMessage('Ya estabas en esa sala. Volviendo al feed.', 'muted')
+                return
+            }
+
+            try {
+                await runAction(target, async () => {
+                    const r = await call('rooms:open', { roomId })
+                    if (!r.ok) throw new Error(r.error || 'No se pudo abrir la sala')
+                    appState.manualHomeView = false
+                    setMessage('Sala abierta.', 'success')
+                    await syncAll()
+                })
+            } catch (e) {
+                setMessage(e.message, 'danger')
+            }
+        })
+
+        btnGoHome?.addEventListener('click', () => {
+            if (!appState.groupConnected) return
+            appState.manualHomeView = true
+            setControls()
+        })
+
+        file.addEventListener('change', async () => {
+            const f = file.files?.[0]
+            if (!f) return
+            if (!/^image\//.test(f.type)) {
+                setMessage('El archivo debe ser imagen.', 'danger')
+                return
+            }
+            const reader = new FileReader()
+            reader.onload = () => {
+                imageDataUrl = String(reader.result || '')
+                preview.src = imageDataUrl
+                preview.style.display = 'block'
+                setControls()
+            }
+            reader.readAsDataURL(f)
+        })
+
+        btnOpenCamera?.addEventListener('click', () => {
+            if (!appState.groupConnected) {
+                setMessage('Primero crea o unete a un grupo.', 'danger')
+                return
+            }
+            file.setAttribute('capture', 'environment')
+            file.click()
+        })
+
+        btnPickGallery?.addEventListener('click', () => {
+            if (!appState.groupConnected) {
+                setMessage('Primero crea o unete a un grupo.', 'danger')
+                return
+            }
+            file.removeAttribute('capture')
+            file.click()
+        })
+
+        btnUpload.addEventListener('click', async () => {
+            if (!imageDataUrl) return
+            if (!appState.groupConnected) {
+                setMessage('Primero tienes que crear o unirte a un grupo.', 'danger')
+                return
+            }
+            try {
+                await runAction(btnUpload, async () => {
+                    await call('feed:submitImage', { imageDataUrl })
+                    setMessage('Imagen enviada y cifrada correctamente.', 'success')
+                    await syncAll()
+                })
+            } catch (e) {
+                setMessage(e.message, 'danger')
+            }
+        })
+
+        btnLeaveRoom?.addEventListener('click', async () => {
+            try {
+                await runAction(btnLeaveRoom, async () => {
+                    const r = await call('rooms:leave', { roomId: appState.roomId })
+                    if (!r.ok) throw new Error(r.error || 'No se pudo salir de la sala')
+                    imageDataUrl = null
+                    appState.roomId = null
+                    appState.manualHomeView = true
+                    file.value = ''
+                    preview.src = ''
+                    preview.style.display = 'none'
+                    setMessage('Has salido de la sala.', 'success')
+                    await syncAll()
+                })
+            } catch (e) {
+                setMessage(e.message, 'danger')
+            }
+        })
+
+        setControls()
+        connect()
+    </script>
+</body>
+
+</html>

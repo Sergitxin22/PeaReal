@@ -4,6 +4,7 @@ const path = require('path')
 
 const PROJECT_ROOT = process.cwd()
 const ELECTRON_BIN = require('electron')
+const BASE_MOBILE_PORT = Number(process.env.MOBILE_BRIDGE_PORT_BASE || 8787)
 
 async function askCount() {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
@@ -21,9 +22,11 @@ async function askCount() {
 
 function spawnPeer(index) {
     const name = `peer${index}`
+    const mobilePort = BASE_MOBILE_PORT + (index - 1)
     const env = {
         ...process.env,
-        PEAREAL_USER: `user${index}`
+        PEAREAL_USER: `user${index}`,
+        MOBILE_BRIDGE_PORT: String(mobilePort)
     }
 
     const child = spawn(ELECTRON_BIN, ['.'], {
@@ -37,6 +40,8 @@ function spawnPeer(index) {
     child.stderr.on('data', chunk => process.stderr.write(`[${name}] ${chunk.toString()}`))
     child.on('exit', code => console.log(`[${name}] exited (${code})`))
 
+    console.log(`[${name}] mobile bridge -> http://localhost:${mobilePort}`)
+
     return child
 }
 
@@ -46,6 +51,7 @@ async function main() {
     console.log(`\nLevantando ${count} UI(s) de Electron con usuarios aislados...\n`)
     console.log('Cada ventana usa PEAREAL_USER distinto (user1, user2, ...).')
     console.log('Crea grupo en peer1 y pega el invite en los demas peers para unirlos.\n')
+    console.log(`Puertos moviles: base ${BASE_MOBILE_PORT}, uno por peer (ej: peer1=${BASE_MOBILE_PORT}, peer2=${BASE_MOBILE_PORT + 1}).\n`)
 
     const peers = []
     for (let i = 1; i <= count; i++) {

@@ -3,8 +3,7 @@
 // Message encryption and unlock protocol:
 //   - Each note uses a random content key (CK) with XChaCha20-Poly1305.
 //   - Ciphertext is replicated to everyone.
-//   - To reveal a note, a peer creates an unlock request to the author.
-//   - Author responds with CK wrapped for that peer's public key.
+//   - Unlock is automatic: peers that submitted exchange wrapped CK grants.
 
 const { put, get, del, listByPrefix } = require('./peer')
 const sodium = require('sodium-universal')
@@ -24,7 +23,6 @@ function ensureXChaChaAvailable() {
 
 function noteKey(roundId, authorHex) { return `round:${roundId}:note:${authorHex}` }
 function metaKey(roundId) { return `round:${roundId}:meta` }
-function unlockReqKey(roundId, authorHex, requesterHex) { return `round:${roundId}:unlockReq:${authorHex}:${requesterHex}` }
 function unlockGrantKey(roundId, authorHex, requesterHex) { return `round:${roundId}:unlockGrant:${authorHex}:${requesterHex}` }
 
 function parseAuthorHexFromNoteKey(key) {
@@ -63,38 +61,6 @@ function verifyNoteSignature(publicKeyPem, roundId, authorHex, commitment, ts, n
     )
   } catch {
     return false
-  }
-}
-
-function unlockReqPayload(roundId, toAuthorHex, requesterHex, ts) {
-  return `unlockReq|${roundId}|${toAuthorHex}|${requesterHex}|${ts}`
-}
-
-function signUnlockReq(privateKeyPem, roundId, toAuthorHex, requesterHex, ts) {
-  const payload = unlockReqPayload(roundId, toAuthorHex, requesterHex, ts)
-  return crypto.sign('sha256', Buffer.from(payload, 'utf8'), privateKeyPem).toString('base64')
-}
-
-function verifyUnlockReqSignature(publicKeyPem, roundId, toAuthorHex, requesterHex, ts, signatureB64) {
-  try {
-    const payload = unlockReqPayload(roundId, toAuthorHex, requesterHex, ts)
-    return crypto.verify(
-      'sha256',
-      Buffer.from(payload, 'utf8'),
-      publicKeyPem,
-      Buffer.from(signatureB64, 'base64')
-    )
-  } catch {
-    return false
-  }
-}
-
-function parseRequesterHexFromReqKey(key) {
-  try {
-    const parts = String(key).split(':')
-    return parts[parts.length - 1] || null
-  } catch {
-    return null
   }
 }
 
@@ -237,141 +203,29 @@ async function hasSubmitted(pass, authorHex) {
   return (await get(pass, noteKey(roundId, authorHex))) !== null
 }
 
-async function getPendingUnlockRequests(pass, localAuthorHex) {
-  const roundId = await getCurrentRound(pass)
-  if (!roundId) return []
+async function ensureAutoGrantForPeer(pass, roundId, localAuthorHex, targetAuthorHex, targetPublicKeyPem, localPrivateKeyPem) {
+  if (targetAuthorHex === localAuthorHex) return
+  if (!targetPublicKeyPem) return
 
-  const myNote = await get(pass, noteKey(roundId, localAuthorHex))
-  if (!myNote) return []
+  const targetNote = await get(pass, noteKey(roundId, targetAuthorHex))
+  if (!targetNote) return
 
-  const requests = await listByPrefix(pass, `round:${roundId}:unlockReq:${localAuthorHex}:`)
-  const pending = []
-
-  for (const reqEntry of requests) {
-    const req = reqEntry.value
-    const requesterHexFromPath = parseRequesterHexFromReqKey(reqEntry.key)
-    const requesterHex = req?.from
-    const requesterPub = req?.requesterPublicKeyPem
-    if (!requesterHex || !requesterPub || !requesterHexFromPath) continue
-    if (requesterHex !== requesterHexFromPath) continue
-    if (req.to !== localAuthorHex) continue
-
-    const signatureOk = verifyUnlockReqSignature(
-      requesterPub,
-      roundId,
-      localAuthorHex,
-      requesterHex,
-      req.ts,
-      req.signature
-    )
-    if (!signatureOk) continue
-
-    const requesterSubmitted = await get(pass, noteKey(roundId, requesterHex))
-    if (!requesterSubmitted) continue
-    if (requesterSubmitted.authorPublicKeyPem !== requesterPub) continue
-
-    const requesterNoteSigOk = verifyNoteSignature(
-      requesterSubmitted.authorPublicKeyPem,
-      roundId,
-      requesterSubmitted.author,
-      requesterSubmitted.commitment,
-      requesterSubmitted.ts,
-      requesterSubmitted.noteNonceHex,
-      requesterSubmitted.signature
-    )
-    if (!requesterNoteSigOk) continue
-
-    const grantPath = unlockGrantKey(roundId, localAuthorHex, requesterHex)
-    const existingGrant = await get(pass, grantPath)
-    if (existingGrant) continue
-
-    pending.push({
-      requesterHex,
-      requestedAt: req.ts || Date.now()
-    })
-  }
-
-  return pending.sort((a, b) => a.requestedAt - b.requestedAt)
-}
-
-async function approveUnlockRequest(pass, localAuthorHex, requesterHex, localPrivateKeyPem) {
-  const roundId = await getCurrentRound(pass)
-  if (!roundId) return { ok: false, error: 'No active round' }
-
-  const myNote = await get(pass, noteKey(roundId, localAuthorHex))
-  if (!myNote) return { ok: false, error: 'You have no note in this round' }
-
-  const req = await get(pass, unlockReqKey(roundId, localAuthorHex, requesterHex))
-  if (!req?.requesterPublicKeyPem) return { ok: false, error: 'No pending request for this peer' }
-  if (req.to !== localAuthorHex || req.from !== requesterHex) return { ok: false, error: 'Malformed request' }
-
-  const signatureOk = verifyUnlockReqSignature(
-    req.requesterPublicKeyPem,
-    roundId,
-    localAuthorHex,
-    requesterHex,
-    req.ts,
-    req.signature
-  )
-  if (!signatureOk) return { ok: false, error: 'Invalid request signature' }
-
-  const requesterSubmitted = await get(pass, noteKey(roundId, requesterHex))
-  if (!requesterSubmitted) return { ok: false, error: 'Requester has not submitted yet' }
-  if (requesterSubmitted.authorPublicKeyPem !== req.requesterPublicKeyPem) {
-    return { ok: false, error: 'Requester public key does not match submitted note' }
-  }
-
-  const requesterNoteSigOk = verifyNoteSignature(
-    requesterSubmitted.authorPublicKeyPem,
-    roundId,
-    requesterSubmitted.author,
-    requesterSubmitted.commitment,
-    requesterSubmitted.ts,
-    requesterSubmitted.noteNonceHex,
-    requesterSubmitted.signature
-  )
-  if (!requesterNoteSigOk) {
-    return { ok: false, error: 'Requester note signature is invalid' }
-  }
-
-  const grantPath = unlockGrantKey(roundId, localAuthorHex, requesterHex)
-  const existingGrant = await get(pass, grantPath)
-  if (existingGrant) return { ok: true, alreadyApproved: true }
+  const existingGrant = await get(pass, unlockGrantKey(roundId, localAuthorHex, targetAuthorHex))
+  if (existingGrant?.wrappedKey) return
 
   const selfGrant = await get(pass, unlockGrantKey(roundId, localAuthorHex, localAuthorHex))
-  if (!selfGrant?.wrappedKey) return { ok: false, error: 'Missing local self grant' }
+  if (!selfGrant?.wrappedKey) return
 
   const myContentKey = unwrapContentKey(selfGrant.wrappedKey, localPrivateKeyPem)
-  if (!myContentKey) return { ok: false, error: 'Failed to recover content key' }
+  if (!myContentKey) return
 
-  await put(pass, grantPath, {
-    from: localAuthorHex,
-    to: requesterHex,
-    wrappedKey: wrapContentKeyForPeer(myContentKey, req.requesterPublicKeyPem),
-    wrapAlg: WRAP_ALG,
-    ts: Date.now()
-  })
-
-  return { ok: true, approved: true }
-}
-
-async function ensureUnlockRequestForAuthor(pass, roundId, localAuthorHex, targetAuthorHex, localPublicKeyPem, localPrivateKeyPem) {
-  if (targetAuthorHex === localAuthorHex) return
-
-  const reqPath = unlockReqKey(roundId, targetAuthorHex, localAuthorHex)
-  const existingReq = await get(pass, reqPath)
-  if (existingReq) return
-
-  const ts = Date.now()
-  const signature = signUnlockReq(localPrivateKeyPem, roundId, targetAuthorHex, localAuthorHex, ts)
-
-  await put(pass, reqPath, {
+  await put(pass, unlockGrantKey(roundId, localAuthorHex, targetAuthorHex), {
     from: localAuthorHex,
     to: targetAuthorHex,
-    requesterPublicKeyPem: localPublicKeyPem,
-    ts,
-    signature,
-    sigAlg: 'rsa-sha256'
+    wrappedKey: wrapContentKeyForPeer(myContentKey, targetPublicKeyPem),
+    wrapAlg: WRAP_ALG,
+    ts: Date.now(),
+    auto: true
   })
 }
 
@@ -414,15 +268,21 @@ async function getFeedNotes(pass, localUserSubmitted, _groupKey, localAuthorHex,
       continue
     }
 
-    await ensureUnlockRequestForAuthor(pass, roundId, localAuthorHex, note.author, localPublicKeyPem, localPrivateKeyPem)
+    await ensureAutoGrantForPeer(
+      pass,
+      roundId,
+      localAuthorHex,
+      note.author,
+      note.authorPublicKeyPem,
+      localPrivateKeyPem
+    )
 
     const grant = await get(pass, unlockGrantKey(roundId, note.author, localAuthorHex))
-    const mutualGrant = await get(pass, unlockGrantKey(roundId, localAuthorHex, note.author))
     let content = null
     if (note.author === localAuthorHex && grant?.wrappedKey) {
       const contentKey = unwrapContentKey(grant.wrappedKey, localPrivateKeyPem)
       if (contentKey) content = decryptContent(note.encrypted, note.nonce, contentKey)
-    } else if (grant?.wrappedKey && mutualGrant?.wrappedKey) {
+    } else if (grant?.wrappedKey) {
       const contentKey = unwrapContentKey(grant.wrappedKey, localPrivateKeyPem)
       if (contentKey) content = decryptContent(note.encrypted, note.nonce, contentKey)
     }
@@ -481,8 +341,6 @@ module.exports = {
   submitNote,
   hasSubmitted,
   getFeedNotes,
-  getPendingUnlockRequests,
-  approveUnlockRequest,
   getRoundMeta,
   scheduleBeReal
 }

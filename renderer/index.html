@@ -10,21 +10,37 @@
 
 <body>
 
-  <!-- ── SCREEN 1: Auth ───────────────────────────────────────── -->
-  <div id="screen-auth" class="screen active">
+  <!-- ── SCREEN 1: Home ───────────────────────────────────────── -->
+  <div id="screen-home" class="screen active">
     <div class="auth-box">
       <div class="logo">🍐 PeaReal</div>
-      <p class="tagline">Share your real moment. P2P. No servers.</p>
-      <button id="btn-create" class="btn btn-primary">Create a Group</button>
-      <div class="divider">or</div>
-      <input id="input-invite" type="text" placeholder="Paste invite code…" />
-      <button id="btn-join" class="btn btn-secondary">Join Group</button>
-      <div id="auth-error" class="error hidden"></div>
+      <p class="tagline">Tus salas P2P. Crea, unete, entra y sal cuando quieras.</p>
+
+      <div class="rooms-panel">
+        <div class="section-title">Tus salas</div>
+        <div id="rooms-list" class="rooms-list"></div>
+        <div id="rooms-empty" class="muted hidden">No estas en ninguna sala todavia.</div>
+      </div>
+
+      <div class="rooms-panel">
+        <div class="section-title">Crear sala</div>
+        <input id="input-room-name" type="text" placeholder="Nombre de sala (opcional)" />
+        <button id="btn-room-create" class="btn btn-primary">Crear sala nueva</button>
+      </div>
+
+      <div class="rooms-panel">
+        <div class="section-title">Unirme con invite</div>
+        <input id="input-invite" type="text" placeholder="Pega invite code" />
+        <input id="input-join-room-name" type="text" placeholder="Nombre local para esta sala (opcional)" />
+        <button id="btn-room-join" class="btn btn-secondary">Unirme a sala</button>
+      </div>
+
+      <div id="home-error" class="error hidden"></div>
+
       <div id="invite-box" class="invite-box hidden">
-        <p>Share this invite code with your friends:</p>
+        <p>Invite de la sala creada:</p>
         <div id="invite-code" class="code-block"></div>
-        <button id="btn-copy-invite" class="btn btn-ghost">📋 Copy</button>
-        <button id="btn-go-feed" class="btn btn-primary">Go to Feed →</button>
+        <button id="btn-copy-invite" class="btn btn-ghost">Copiar invite</button>
       </div>
     </div>
   </div>
@@ -33,8 +49,11 @@
   <div id="screen-feed" class="screen hidden">
     <header class="topbar">
       <span class="logo-sm">🍐 PeaReal</span>
+      <span id="room-tag" class="author-tag"></span>
       <span id="author-tag" class="author-tag"></span>
       <div class="topbar-actions">
+        <button id="btn-home" class="btn btn-ghost btn-sm">Volver a salas</button>
+        <button id="btn-leave-room" class="btn btn-ghost btn-sm">Salir de sala</button>
         <button id="btn-trigger" class="btn btn-ghost btn-sm" title="Trigger new round (dev)">⚡ Trigger</button>
       </div>
     </header>
@@ -51,10 +70,14 @@
       <div class="submit-top">
         <div class="state-icon">🍐</div>
         <h2>PeaReal time!</h2>
-        <p>Write your note. Moments unlock after mutual approval.</p>
-        <textarea id="note-input" placeholder="What's happening right now?" maxlength="280"></textarea>
-        <div class="char-count"><span id="char-count">0</span>/280</div>
-        <button id="btn-submit" class="btn btn-primary">Submit & Reveal 👁</button>
+        <p>Take a photo and submit it encrypted. Moments unlock automatically.</p>
+        <input id="photo-input" type="file" accept="image/png,image/jpeg,image/webp" capture="environment"
+          class="hidden" />
+        <img id="photo-preview" class="note-image hidden" alt="Photo preview" />
+        <div class="row-inline">
+          <button id="btn-pick-photo" class="btn btn-secondary">Open camera / gallery</button>
+          <button id="btn-submit" class="btn btn-primary">Submit Photo & Reveal 👁</button>
+        </div>
         <div id="submit-error" class="error hidden"></div>
       </div>
 
@@ -73,11 +96,6 @@
       <div class="feed-header">
         <h2>Today's moments</h2>
         <p id="feed-round-time" class="muted"></p>
-      </div>
-
-      <div id="unlock-requests" class="unlock-requests hidden">
-        <div class="unlock-requests-title">Manual unlock requests</div>
-        <div id="unlock-requests-list" class="unlock-requests-list"></div>
       </div>
 
       <div id="feed-list" class="feed-list"></div>

@@ -49,7 +49,7 @@ body {
 }
 
 /* ── Auth ── */
-#screen-auth {
+#screen-home {
   align-items: center;
   justify-content: center;
   padding: 32px;
@@ -61,6 +61,65 @@ body {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.rooms-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.section-title {
+  font-size: 0.82rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.rooms-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.room-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+
+.room-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.room-name {
+  font-weight: 600;
+  font-size: 0.92rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.room-sub {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.room-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
 .logo {
@@ -223,6 +282,13 @@ body {
   max-width: 360px;
 }
 
+.row-inline {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
 .submit-locked {
   padding: 16px 20px 24px;
   display: flex;
@@ -265,56 +331,6 @@ body {
   display: flex;
   flex-direction: column;
   gap: 12px;
-}
-
-.unlock-requests {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  background: var(--surface2);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 12px;
-  margin-bottom: 14px;
-}
-
-.unlock-requests-title {
-  font-size: 0.8rem;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-
-.unlock-requests-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.unlock-request-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 8px 10px;
-}
-
-.unlock-request-meta {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.unlock-request-meta strong {
-  font-size: 0.86rem;
-}
-
-.unlock-request-meta span {
-  font-size: 0.75rem;
-  color: var(--muted);
 }
 
 /* ── Note card ── */
@@ -380,6 +396,15 @@ body {
   line-height: 1.55;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.note-image {
+  width: 100%;
+  max-height: 320px;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: #000;
 }
 
 /* Locked note */

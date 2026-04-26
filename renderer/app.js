@@ -1,40 +1,52 @@
 // renderer/app.js
 ; (async () => {
   const $ = id => document.getElementById(id)
-  const screenAuth = $('screen-auth')
+
+  const screenHome = $('screen-home')
   const screenFeed = $('screen-feed')
-  const btnCreate = $('btn-create')
-  const btnJoin = $('btn-join')
+
+  const roomsList = $('rooms-list')
+  const roomsEmpty = $('rooms-empty')
+  const inputRoomName = $('input-room-name')
   const inputInvite = $('input-invite')
-  const authError = $('auth-error')
+  const inputJoinRoomName = $('input-join-room-name')
+  const btnRoomCreate = $('btn-room-create')
+  const btnRoomJoin = $('btn-room-join')
+  const homeError = $('home-error')
   const inviteBox = $('invite-box')
   const inviteCode = $('invite-code')
   const btnCopyInvite = $('btn-copy-invite')
-  const btnGoFeed = $('btn-go-feed')
+
+  const roomTag = $('room-tag')
   const authorTag = $('author-tag')
+  const btnHome = $('btn-home')
+  const btnLeaveRoom = $('btn-leave-room')
+
   const stateWaiting = $('state-waiting')
   const stateSubmit = $('state-submit')
   const stateFeed = $('state-feed')
-  const noteInput = $('note-input')
-  const charCount = $('char-count')
+
+  const photoInput = $('photo-input')
+  const photoPreview = $('photo-preview')
+  const btnPickPhoto = $('btn-pick-photo')
   const btnSubmit = $('btn-submit')
   const submitError = $('submit-error')
-  const submitLockedList = $('submit-locked-list')  // locked cards on submit screen
+  const submitLockedList = $('submit-locked-list')
+
   const feedList = $('feed-list')
   const feedEmpty = $('feed-empty')
   const feedRoundTime = $('feed-round-time')
-  const unlockRequests = $('unlock-requests')
-  const unlockRequestsList = $('unlock-requests-list')
+
   const btnTrigger = $('btn-trigger')
   const toast = $('toast')
 
   let isConnected = false
   let pollInterval = null
-
-  // ── Helpers ───────────────────────────────────────────────────────────────────
+  let selectedPhotoDataUrl = null
+  let currentRoom = null
 
   function showScreen(name) {
-    screenAuth.classList.add('hidden')
+    screenHome.classList.add('hidden')
     screenFeed.classList.add('hidden')
     $('screen-' + name)?.classList.remove('hidden')
   }
@@ -67,85 +79,226 @@
 
   function shortId(hex) { return hex ? hex.slice(0, 8) : '???' }
 
-  function formatDateTime(ms) {
-    if (!ms) return ''
-    return new Date(ms).toLocaleString([], {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit'
-    })
-  }
-
   function colorFromId(hex) {
     const hue = parseInt((hex || '0000').slice(0, 4), 16) % 360
     return `hsl(${hue}, 70%, 55%)`
   }
 
-  // ── Auth ──────────────────────────────────────────────────────────────────────
+  function escapeHtml(str) {
+    if (!str) return ''
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+  }
 
-  btnCreate.addEventListener('click', async () => {
-    btnCreate.disabled = true
-    btnCreate.textContent = 'Creating…'
-    const res = await window.peareal.createGroup().catch(e => ({ ok: false, error: e.message }))
-    btnCreate.disabled = false
-    btnCreate.textContent = 'Create a Group'
-    if (!res?.ok) { showError(authError, res?.error || 'Failed to create group'); return }
-    if (!res.invite) { showError(authError, 'No invite code returned'); return }
-    authorTag.textContent = `#${shortId(res.authorHex)}`
-    inviteCode.textContent = res.invite
-    inviteBox.classList.remove('hidden')
+  function setCurrentRoom(room) {
+    currentRoom = room || null
+    roomTag.textContent = currentRoom?.name ? `Sala: ${currentRoom.name}` : ''
+  }
+
+  function resetComposer() {
+    selectedPhotoDataUrl = null
+    if (photoInput) photoInput.value = ''
+    if (photoPreview) {
+      photoPreview.src = ''
+      photoPreview.classList.add('hidden')
+    }
+  }
+
+  function startFeedPolling() {
+    if (pollInterval) clearInterval(pollInterval)
+    pollInterval = setInterval(refreshFeed, 5000)
+  }
+
+  function stopFeedPolling() {
+    if (pollInterval) clearInterval(pollInterval)
+    pollInterval = null
+  }
+
+  async function loadRooms() {
+    const res = await window.peareal.listRooms().catch(e => ({ ok: false, error: e.message, rooms: [] }))
+    if (!res?.ok) {
+      showError(homeError, res?.error || 'No se pudieron cargar las salas')
+      return
+    }
+
+    const rooms = Array.isArray(res.rooms) ? res.rooms : []
+    const currentId = res.current?.id || null
+    roomsList.innerHTML = ''
+
+    if (rooms.length === 0) {
+      roomsEmpty.classList.remove('hidden')
+      return
+    }
+    roomsEmpty.classList.add('hidden')
+
+    for (const room of rooms) {
+      const row = document.createElement('div')
+      row.className = 'room-item'
+      row.innerHTML = `
+        <div class="room-meta">
+          <div class="room-name">${escapeHtml(room.name || 'Sala')}</div>
+          <div class="room-sub">${currentId === room.id ? 'Activa' : 'Guardada'} · #${escapeHtml(String(room.id || '').slice(0, 8))}</div>
+        </div>
+        <div class="room-actions">
+          <button class="btn btn-secondary btn-sm" data-open-room="${escapeHtml(room.id)}">Entrar</button>
+          <button class="btn btn-ghost btn-sm" data-leave-room="${escapeHtml(room.id)}">Salir</button>
+        </div>
+      `
+      roomsList.appendChild(row)
+    }
+  }
+
+  async function enterRoom(roomId) {
+    const res = await window.peareal.openRoom(roomId).catch(e => ({ ok: false, error: e.message }))
+    if (!res?.ok) {
+      showError(homeError, res?.error || 'No se pudo abrir la sala')
+      return
+    }
+
     isConnected = true
-    showToast('Group created! Share the invite code.')
+    setCurrentRoom(res.room)
+    authorTag.textContent = `#${shortId(res.authorHex)}`
+    showScreen('feed')
+    startFeedPolling()
+    await refreshFeed()
+    await loadRooms()
+  }
+
+  async function leaveRoomById(roomId, returnHome = false) {
+    const res = await window.peareal.leaveRoom(roomId).catch(e => ({ ok: false, error: e.message }))
+    if (!res?.ok) {
+      showToast(res?.error || 'No se pudo salir de la sala')
+      return
+    }
+
+    if (currentRoom?.id === roomId) {
+      isConnected = false
+      setCurrentRoom(null)
+      authorTag.textContent = ''
+      stopFeedPolling()
+      resetComposer()
+      showFeedState('waiting')
+    }
+
+    await loadRooms()
+    if (returnHome) showScreen('home')
+    showToast('Saliste de la sala')
+  }
+
+  btnRoomCreate.addEventListener('click', async () => {
+    btnRoomCreate.disabled = true
+    btnRoomCreate.textContent = 'Creando...'
+    const res = await window.peareal.createRoom(inputRoomName.value.trim()).catch(e => ({ ok: false, error: e.message }))
+    btnRoomCreate.disabled = false
+    btnRoomCreate.textContent = 'Crear sala nueva'
+
+    if (!res?.ok) {
+      showError(homeError, res?.error || 'No se pudo crear la sala')
+      return
+    }
+
+    inputRoomName.value = ''
+    inviteCode.textContent = res.invite || ''
+    inviteBox.classList.remove('hidden')
+    showToast('Sala creada')
+
+    isConnected = true
+    setCurrentRoom(res.room)
+    authorTag.textContent = `#${shortId(res.authorHex)}`
+    showScreen('feed')
+    startFeedPolling()
+    await refreshFeed()
+    await loadRooms()
+  })
+
+  btnRoomJoin.addEventListener('click', async () => {
+    const invite = inputInvite.value.trim()
+    if (!invite) {
+      showError(homeError, 'Pega un invite code primero')
+      return
+    }
+
+    btnRoomJoin.disabled = true
+    btnRoomJoin.textContent = 'Uniendo...'
+    const res = await window.peareal.joinRoom(invite, inputJoinRoomName.value.trim()).catch(e => ({ ok: false, error: e.message }))
+    btnRoomJoin.disabled = false
+    btnRoomJoin.textContent = 'Unirme a sala'
+
+    if (!res?.ok) {
+      showError(homeError, res?.error || 'No se pudo unir a la sala')
+      return
+    }
+
+    inputInvite.value = ''
+    inputJoinRoomName.value = ''
+    inviteBox.classList.add('hidden')
+    showToast('Unido a la sala')
+
+    isConnected = true
+    setCurrentRoom(res.room)
+    authorTag.textContent = `#${shortId(res.authorHex)}`
+    showScreen('feed')
+    startFeedPolling()
+    await refreshFeed()
+    await loadRooms()
   })
 
   btnCopyInvite.addEventListener('click', () => {
     navigator.clipboard.writeText(inviteCode.textContent.trim())
-      .then(() => showToast('Copied!'))
-      .catch(() => { window.getSelection().selectAllChildren(inviteCode); showToast('Select + copy manually') })
+      .then(() => showToast('Invite copiado'))
+      .catch(() => {
+        window.getSelection().selectAllChildren(inviteCode)
+        showToast('Selecciona y copia manualmente')
+      })
   })
 
-  btnGoFeed.addEventListener('click', () => {
-    showScreen('feed')
-    startFeedPolling()
-    refreshFeed()
+  roomsList.addEventListener('click', async (event) => {
+    const rawTarget = event.target
+    if (!(rawTarget instanceof HTMLElement)) return
+
+    const openBtn = rawTarget.closest('[data-open-room]')
+    const leaveBtn = rawTarget.closest('[data-leave-room]')
+
+    const openId = openBtn instanceof HTMLElement ? openBtn.getAttribute('data-open-room') : null
+    if (openId) {
+      await enterRoom(openId)
+      return
+    }
+
+    const leaveId = leaveBtn instanceof HTMLElement ? leaveBtn.getAttribute('data-leave-room') : null
+    if (leaveId) {
+      await leaveRoomById(leaveId, currentRoom?.id === leaveId)
+    }
   })
 
-  btnJoin.addEventListener('click', async () => {
-    const code = inputInvite.value.trim()
-    if (!code) { showError(authError, 'Paste an invite code first'); return }
-    btnJoin.disabled = true
-    btnJoin.textContent = 'Joining…'
-    const res = await window.peareal.joinGroup(code).catch(e => ({ ok: false, error: e.message }))
-    btnJoin.disabled = false
-    btnJoin.textContent = 'Join Group'
-    if (!res?.ok) { showError(authError, res?.error || 'Failed to join'); return }
-    authorTag.textContent = `#${shortId(res.authorHex)}`
-    isConnected = true
-    showScreen('feed')
-    startFeedPolling()
-    refreshFeed()
+  btnHome.addEventListener('click', async () => {
+    showScreen('home')
+    stopFeedPolling()
+    await loadRooms()
   })
 
-  // ── Feed ──────────────────────────────────────────────────────────────────────
+  btnLeaveRoom.addEventListener('click', async () => {
+    if (!currentRoom?.id) return
+    await leaveRoomById(currentRoom.id, true)
+  })
 
   async function refreshFeed() {
     if (!isConnected) return
-    const res = await window.peareal.getFeed()
+    const res = await window.peareal.getFeed().catch(() => null)
     if (!res?.ok) return
     const { notes, submitted, meta } = res
 
-    if (!meta) { showFeedState('waiting'); return }
+    if (!meta) {
+      showFeedState('waiting')
+      return
+    }
 
     if (!submitted) {
-      // Show submit form AND locked cards from peers who already posted
       showFeedState('submit')
       renderLockedCards(notes)
       return
     }
 
-    // User submitted — show full feed with decrypted notes
     showFeedState('feed')
-    await refreshPendingUnlockRequests()
     if (meta?.triggeredAt) feedRoundTime.textContent = `Round started at ${formatTime(meta.triggeredAt)}`
     feedList.innerHTML = ''
     if (!notes?.length) {
@@ -156,37 +309,6 @@
     }
   }
 
-  async function refreshPendingUnlockRequests() {
-    if (!unlockRequests || !unlockRequestsList) return
-
-    const res = await window.peareal.getPendingUnlockRequests().catch(() => ({ ok: false, requests: [] }))
-    if (!res?.ok || !Array.isArray(res.requests) || res.requests.length === 0) {
-      unlockRequests.classList.add('hidden')
-      unlockRequestsList.innerHTML = ''
-      return
-    }
-
-    unlockRequests.classList.remove('hidden')
-    unlockRequestsList.innerHTML = ''
-
-    for (const req of res.requests) {
-      const row = document.createElement('div')
-      row.className = 'unlock-request-item'
-      row.innerHTML = `
-        <div class="unlock-request-meta">
-          <strong>#${shortId(req.requesterHex)}</strong>
-          <span>Requested at ${escapeHtml(formatDateTime(req.requestedAt))}</span>
-        </div>
-        <button class="btn btn-secondary btn-sm" data-approve-request="${escapeHtml(req.requesterHex)}">Approve</button>
-      `
-      unlockRequestsList.appendChild(row)
-    }
-  }
-
-  /**
-   * Render locked preview cards on the submit screen.
-   * Shows how many peers have already posted, but content is cryptographically hidden.
-   */
   function renderLockedCards(notes) {
     if (!submitLockedList) return
     submitLockedList.innerHTML = ''
@@ -214,16 +336,22 @@
       ${note.hidden
         ? `<div class="note-locked">
              <span class="lock-icon">🔒</span>
-             <span class="lock-text">Encrypted — requires mutual unlock approval</span>
+             <span class="lock-text">Encrypted — waiting for automatic peer key sync</span>
              <div class="lock-cipher">${generateFakeCipherPreview()}</div>
            </div>`
-        : `<div class="note-content">${escapeHtml(note.content)}</div>`
+        : renderRevealedContent(note.content)
       }
     `
     return card
   }
 
-  /** Generate a plausible-looking hex string for the locked card visual */
+  function renderRevealedContent(content) {
+    if (typeof content === 'string' && /^data:image\/(png|jpeg|jpg|webp);base64,/i.test(content)) {
+      return `<img class="note-image" src="${content}" alt="Shared moment" />`
+    }
+    return `<div class="note-content">${escapeHtml(content)}</div>`
+  }
+
   function generateFakeCipherPreview() {
     const chars = '0123456789abcdef'
     let s = ''
@@ -231,53 +359,47 @@
     return s.match(/.{1,8}/g).join(' ')
   }
 
-  function escapeHtml(str) {
-    if (!str) return ''
-    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
-  }
-
-  // ── Submit ────────────────────────────────────────────────────────────────────
-
-  noteInput.addEventListener('input', () => { charCount.textContent = noteInput.value.length })
-
-  btnSubmit.addEventListener('click', async () => {
-    const text = noteInput.value.trim()
-    if (!text) { showError(submitError, 'Write something first!'); return }
-    btnSubmit.disabled = true
-    btnSubmit.textContent = 'Submitting…'
-    const res = await window.peareal.submitNote(text)
-    btnSubmit.disabled = false
-    btnSubmit.textContent = 'Submit & Reveal 👁'
-    if (!res?.ok) { showError(submitError, res?.error || 'Submission failed'); return }
-    noteInput.value = ''
-    charCount.textContent = '0'
-    showToast('Note submitted! Awaiting mutual approvals.')
-    await refreshFeed()
+  btnPickPhoto?.addEventListener('click', () => {
+    photoInput?.click()
   })
 
-  unlockRequestsList?.addEventListener('click', async (event) => {
-    const target = event.target
-    if (!(target instanceof HTMLElement)) return
-    const requesterHex = target.getAttribute('data-approve-request')
-    if (!requesterHex) return
-
-    target.setAttribute('disabled', 'true')
-    target.textContent = 'Approving…'
-    const res = await window.peareal.approveUnlockRequest(requesterHex).catch(e => ({ ok: false, error: e.message }))
-
-    if (!res?.ok) {
-      showToast(`Approval failed: ${res?.error || 'unknown error'}`)
-      target.removeAttribute('disabled')
-      target.textContent = 'Approve'
+  photoInput?.addEventListener('change', () => {
+    const file = photoInput.files?.[0]
+    if (!file) return
+    if (!/^image\//.test(file.type)) {
+      showError(submitError, 'Select a valid image')
       return
     }
 
-    showToast(`Approved #${shortId(requesterHex)}`)
-    await refreshPendingUnlockRequests()
-    await refreshFeed()
+    const reader = new FileReader()
+    reader.onload = () => {
+      selectedPhotoDataUrl = String(reader.result || '')
+      if (photoPreview && selectedPhotoDataUrl) {
+        photoPreview.src = selectedPhotoDataUrl
+        photoPreview.classList.remove('hidden')
+      }
+    }
+    reader.readAsDataURL(file)
   })
 
-  // ── Dev ───────────────────────────────────────────────────────────────────────
+  btnSubmit.addEventListener('click', async () => {
+    if (!selectedPhotoDataUrl) {
+      showError(submitError, 'Take/select a photo first')
+      return
+    }
+    btnSubmit.disabled = true
+    btnSubmit.textContent = 'Submitting...'
+    const res = await window.peareal.submitNote(selectedPhotoDataUrl)
+    btnSubmit.disabled = false
+    btnSubmit.textContent = 'Submit Photo & Reveal 👁'
+    if (!res?.ok) {
+      showError(submitError, res?.error || 'Submission failed')
+      return
+    }
+    resetComposer()
+    showToast('Photo submitted!')
+    await refreshFeed()
+  })
 
   btnTrigger.addEventListener('click', async () => {
     await window.peareal.triggerNow()
@@ -285,30 +407,23 @@
     await refreshFeed()
   })
 
-  // ── Events from main ─────────────────────────────────────────────────────────
-
   window.peareal.onBeRealTrigger(async () => {
     showToast('🍐 PeaReal time! Share your moment!', 5000)
-    if (isConnected) { showFeedState('submit'); noteInput.value = ''; charCount.textContent = '0' }
+    if (isConnected) {
+      showFeedState('submit')
+      resetComposer()
+    }
   })
 
-  window.peareal.onFeedUpdated(async () => { if (isConnected) await refreshFeed() })
+  window.peareal.onFeedUpdated(async () => {
+    if (isConnected) await refreshFeed()
+  })
 
-  function startFeedPolling() {
-    if (pollInterval) clearInterval(pollInterval)
-    pollInterval = setInterval(refreshFeed, 5000)
-  }
+  showScreen('home')
+  await loadRooms()
 
-  // ── Boot ──────────────────────────────────────────────────────────────────────
-
-  const resumed = await window.peareal.resumeSession()
-  if (resumed?.ok) {
-    isConnected = true
-    authorTag.textContent = `#${shortId(resumed.authorHex)}`
-    showScreen('feed')
-    startFeedPolling()
-    await refreshFeed()
-  } else {
-    showScreen('auth')
+  const current = await window.peareal.getCurrentRoom().catch(() => ({ ok: false, room: null }))
+  if (current?.ok && current.room?.id) {
+    setCurrentRoom(current.room)
   }
 })()

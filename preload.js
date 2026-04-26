@@ -5,17 +5,22 @@
 const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('peareal', {
+  // ── Rooms/Home ──
+  listRooms: () => ipcRenderer.invoke('rooms:list'),
+  createRoom: (name) => ipcRenderer.invoke('rooms:create', name),
+  joinRoom: (inviteCode, name) => ipcRenderer.invoke('rooms:join', inviteCode, name),
+  openRoom: (roomId) => ipcRenderer.invoke('rooms:open', roomId),
+  leaveRoom: (roomId) => ipcRenderer.invoke('rooms:leave', roomId),
+  getCurrentRoom: () => ipcRenderer.invoke('rooms:getCurrent'),
+
   // ── Auth ──
   createGroup: () => ipcRenderer.invoke('auth:create'),
   joinGroup: (inviteCode) => ipcRenderer.invoke('auth:join', inviteCode),
-  resumeSession: () => ipcRenderer.invoke('auth:resume'),
 
   // ── Feed ──
   submitNote: (text) => ipcRenderer.invoke('feed:submit', text),
   getFeed: () => ipcRenderer.invoke('feed:get'),
   hasSubmitted: () => ipcRenderer.invoke('feed:hasSubmitted'),
-  getPendingUnlockRequests: () => ipcRenderer.invoke('feed:getPendingUnlockRequests'),
-  approveUnlockRequest: (requesterHex) => ipcRenderer.invoke('feed:approveUnlockRequest', requesterHex),
 
   // ── Dev/test helpers ──
   triggerNow: () => ipcRenderer.invoke('dev:triggerNow'),

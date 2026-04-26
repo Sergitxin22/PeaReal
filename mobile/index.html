@@ -752,7 +752,9 @@
             try {
                 await runAction(btnJoin, async () => {
                     const r = await call('auth:join', { inviteCode: invite.value.trim() })
-                    appState.manualHomeView = false
+                    const joinedRoomName = String(r?.room?.name || '').trim()
+                    if (joinedRoomName) appState.roomName = joinedRoomName
+                    appState.manualHomeView = true
                     setMessage(`Unido al grupo como #${String(r.authorHex || '').slice(0, 8)}`, 'success')
                     await syncAll()
                 })

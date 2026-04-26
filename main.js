@@ -530,8 +530,8 @@ function _startWatcher() {
 
 function _startTimer() {
   if (cancelTimer) cancelTimer()
-  // 50s in dev, random 24h in production
-  const devMs = process.env.NODE_ENV === 'production' ? undefined : 50 * 1000
+  // 120s in dev, random 24h in production
+  const devMs = process.env.NODE_ENV === 'production' ? undefined : 120 * 1000
   cancelTimer = scheduleBeReal(onBeRealTrigger, devMs)
 }
 

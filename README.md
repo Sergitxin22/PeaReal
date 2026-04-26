@@ -108,17 +108,11 @@ No existe backend central para almacenar el feed ni para resolver la autorizaci�
 - Peer intentando manipular o falsificar contenido de nota.
 - Nodo que recibe datos replicados pero no cumple condición de desbloqueo.
 
-### Qué sí protege hoy
+### Qué se rotege hoy
 
 - Las fotos se replican cifradas y solo se descifran con grants válidos.
 - Las notas firmadas y su commitment detectan alteraciones de contenido.
 - Reacciones y comentarios requieren autorización lógica (foto desbloqueada + envío en ronda).
-
-### Qué no protege hoy
-
-- Confidencialidad criptográfica de comentarios/reacciones (no están cifrados como fotos).
-- Seguridad del endpoint local mobile ante un dispositivo host comprometido.
-- Metadata de tráfico y tiempos de publicación/actividad (quien publica y cuando).
 
 ### Supuestos de seguridad
 

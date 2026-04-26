@@ -14,31 +14,31 @@
   <div id="screen-home" class="screen active">
     <div class="auth-box">
       <div class="logo">🍐 PeaReal</div>
-      <p class="tagline">Tus salas P2P. Crea, unete, entra y sal cuando quieras.</p>
+      <p class="tagline">Tus grupos P2P. Crea, unete, entra y sal cuando quieras.</p>
 
       <div class="rooms-panel">
-        <div class="section-title">Tus salas</div>
+        <div class="section-title">Tus grupos</div>
         <div id="rooms-list" class="rooms-list"></div>
-        <div id="rooms-empty" class="muted hidden">No estas en ninguna sala todavia.</div>
+        <div id="rooms-empty" class="muted hidden">No estas en ningun grupo todavia.</div>
       </div>
 
       <div class="rooms-panel">
-        <div class="section-title">Crear sala</div>
-        <input id="input-room-name" type="text" placeholder="Nombre de sala (opcional)" />
-        <button id="btn-room-create" class="btn btn-primary">Crear sala nueva</button>
+        <div class="section-title">Crear grupo</div>
+        <input id="input-room-name" type="text" placeholder="Nombre de grupo (opcional)" />
+        <button id="btn-room-create" class="btn btn-primary">Crear grupo nuevo</button>
       </div>
 
       <div class="rooms-panel">
         <div class="section-title">Unirme con invite</div>
         <input id="input-invite" type="text" placeholder="Pega invite code" />
-        <input id="input-join-room-name" type="text" placeholder="Nombre local para esta sala (opcional)" />
-        <button id="btn-room-join" class="btn btn-secondary">Unirme a sala</button>
+        <input id="input-join-room-name" type="text" placeholder="Nombre local para este grupo (opcional)" />
+        <button id="btn-room-join" class="btn btn-secondary">Unirme a grupo</button>
       </div>
 
       <div id="home-error" class="error hidden"></div>
 
       <div id="invite-box" class="invite-box hidden">
-        <p>Invite de la sala creada:</p>
+        <p>Invite del grupo creado:</p>
         <div id="invite-code" class="code-block"></div>
         <button id="btn-copy-invite" class="btn btn-ghost">Copiar invite</button>
       </div>
@@ -52,8 +52,8 @@
       <span id="room-tag" class="author-tag"></span>
       <span id="author-tag" class="author-tag"></span>
       <div class="topbar-actions">
-        <button id="btn-home" class="btn btn-ghost btn-sm">Volver a salas</button>
-        <button id="btn-leave-room" class="btn btn-ghost btn-sm">Salir de sala</button>
+        <button id="btn-home" class="btn btn-ghost btn-sm">Volver a grupos</button>
+        <button id="btn-leave-room" class="btn btn-ghost btn-sm">Salir de grupo</button>
         <button id="btn-trigger" class="btn btn-ghost btn-sm" title="Trigger new round (dev)">⚡ Trigger</button>
       </div>
     </header>

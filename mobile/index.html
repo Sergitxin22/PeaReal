@@ -419,15 +419,15 @@
         <div class="row" id="roomTopActions">
             <button id="btnRoomInvite">Invite</button>
             <button id="btnGoHome">Ir al home</button>
-            <button id="btnLeaveRoom">Abandonar sala</button>
+            <button id="btnLeaveRoom">Abandonar grupo</button>
         </div>
     </div>
 
     <div class="card" id="authCard">
         <p class="title">Home</p>
-        <p class="muted">Crea una sala, unete por invite o abre una de tus salas guardadas.</p>
+        <p class="muted">Crea un grupo, unete por invite o abre uno de tus grupos guardados.</p>
         <div class="row">
-            <input id="roomNameCreate" type="text" maxlength="48" placeholder="Nombre de la sala (opcional)" />
+            <input id="roomNameCreate" type="text" maxlength="48" placeholder="Nombre del grupo (opcional)" />
         </div>
         <div class="row">
             <button id="btnCreate" class="primary">Crear grupo</button>
@@ -440,9 +440,9 @@
             </div>
             <button id="btnJoin">Unirme</button>
         </div>
-        <p class="muted" style="margin-top:10px">Tus salas</p>
+        <p class="muted" style="margin-top:10px">Tus grupos</p>
         <div id="roomsList" class="rooms-list"></div>
-        <div id="roomsEmpty" class="muted">No hay salas guardadas.</div>
+        <div id="roomsEmpty" class="muted">No hay grupos guardados.</div>
     </div>
 
     <div class="card hidden" id="cameraCard">
@@ -584,7 +584,7 @@
                 document.body.removeChild(ta)
                 if (!ok) throw new Error('Copy failed')
             }
-            setMessage('Invite copiado con nombre de sala.', 'success')
+            setMessage('Invite copiado con nombre de grupo.', 'success')
         }
 
         function renderRooms(rooms, currentId) {
@@ -593,7 +593,7 @@
             roomsList.innerHTML = ''
 
             if (safeRooms.length === 0) {
-                roomsEmpty.textContent = 'No hay salas guardadas todavia.'
+                roomsEmpty.textContent = 'No hay grupos guardados todavia.'
                 roomsEmpty.classList.remove('hidden')
                 return
             }
@@ -605,7 +605,7 @@
                 item.className = 'room-item'
                 item.innerHTML = `
                     <div>
-                        <div class="room-name">${esc(room?.name || 'Sala')}</div>
+                        <div class="room-name">${esc(room?.name || 'Grupo')}</div>
                         <div class="room-sub">${isCurrent ? 'Activa' : 'Guardada'} · #${esc(String(room?.id || '').slice(0, 8))}</div>
                     </div>
                     <button data-open-room="${esc(room?.id || '')}">${isCurrent ? 'Abrir' : 'Entrar'}</button>
@@ -616,7 +616,7 @@
 
         async function refreshRooms() {
             const r = await call('rooms:list')
-            if (!r.ok) throw new Error(r.error || 'No se pudieron cargar las salas')
+            if (!r.ok) throw new Error(r.error || 'No se pudieron cargar los grupos')
             renderRooms(r.rooms || [], r.current?.id || appState.roomId)
         }
 
@@ -700,7 +700,7 @@
                 who.textContent = `${peerLabel} | Home`
                 return
             }
-            who.textContent = `${peerLabel} | Sala: ${appState.roomName || 'sin nombre'}`
+            who.textContent = `${peerLabel} | Grupo: ${appState.roomName || 'sin nombre'}`
         }
 
         function setControls() {
@@ -991,16 +991,16 @@
             if (roomId === appState.roomId) {
                 appState.manualHomeView = false
                 setControls()
-                setMessage('Ya estabas en esa sala. Volviendo al feed.', 'muted')
+                setMessage('Ya estabas en ese grupo. Volviendo al feed.', 'muted')
                 return
             }
 
             try {
                 await runAction(target, async () => {
                     const r = await call('rooms:open', { roomId })
-                    if (!r.ok) throw new Error(r.error || 'No se pudo abrir la sala')
+                    if (!r.ok) throw new Error(r.error || 'No se pudo abrir el grupo')
                     appState.manualHomeView = false
-                    setMessage('Sala abierta.', 'success')
+                    setMessage('Grupo abierto.', 'success')
                     await syncAll()
                 })
             } catch (e) {
@@ -1070,14 +1070,14 @@
             try {
                 await runAction(btnLeaveRoom, async () => {
                     const r = await call('rooms:leave', { roomId: appState.roomId })
-                    if (!r.ok) throw new Error(r.error || 'No se pudo salir de la sala')
+                    if (!r.ok) throw new Error(r.error || 'No se pudo salir del grupo')
                     imageDataUrl = null
                     appState.roomId = null
                     appState.manualHomeView = true
                     file.value = ''
                     preview.src = ''
                     preview.style.display = 'none'
-                    setMessage('Has salido de la sala.', 'success')
+                    setMessage('Has salido del grupo.', 'success')
                     await syncAll()
                 })
             } catch (e) {

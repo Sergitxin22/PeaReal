@@ -91,7 +91,7 @@
 
   function setCurrentRoom(room) {
     currentRoom = room || null
-    roomTag.textContent = currentRoom?.name ? `Sala: ${currentRoom.name}` : ''
+    roomTag.textContent = currentRoom?.name ? `Grupo: ${currentRoom.name}` : ''
   }
 
   function resetComposer() {
@@ -116,7 +116,7 @@
   async function loadRooms() {
     const res = await window.peareal.listRooms().catch(e => ({ ok: false, error: e.message, rooms: [] }))
     if (!res?.ok) {
-      showError(homeError, res?.error || 'No se pudieron cargar las salas')
+      showError(homeError, res?.error || 'No se pudieron cargar los grupos')
       return
     }
 
@@ -135,7 +135,7 @@
       row.className = 'room-item'
       row.innerHTML = `
         <div class="room-meta">
-          <div class="room-name">${escapeHtml(room.name || 'Sala')}</div>
+          <div class="room-name">${escapeHtml(room.name || 'Grupo')}</div>
           <div class="room-sub">${currentId === room.id ? 'Activa' : 'Guardada'} · #${escapeHtml(String(room.id || '').slice(0, 8))}</div>
         </div>
         <div class="room-actions">
@@ -150,7 +150,7 @@
   async function enterRoom(roomId) {
     const res = await window.peareal.openRoom(roomId).catch(e => ({ ok: false, error: e.message }))
     if (!res?.ok) {
-      showError(homeError, res?.error || 'No se pudo abrir la sala')
+      showError(homeError, res?.error || 'No se pudo abrir el grupo')
       return
     }
 
@@ -166,7 +166,7 @@
   async function leaveRoomById(roomId, returnHome = false) {
     const res = await window.peareal.leaveRoom(roomId).catch(e => ({ ok: false, error: e.message }))
     if (!res?.ok) {
-      showToast(res?.error || 'No se pudo salir de la sala')
+      showToast(res?.error || 'No se pudo salir del grupo')
       return
     }
 
@@ -181,7 +181,7 @@
 
     await loadRooms()
     if (returnHome) showScreen('home')
-    showToast('Saliste de la sala')
+    showToast('Saliste del grupo')
   }
 
   btnRoomCreate.addEventListener('click', async () => {
@@ -189,17 +189,17 @@
     btnRoomCreate.textContent = 'Creando...'
     const res = await window.peareal.createRoom(inputRoomName.value.trim()).catch(e => ({ ok: false, error: e.message }))
     btnRoomCreate.disabled = false
-    btnRoomCreate.textContent = 'Crear sala nueva'
+    btnRoomCreate.textContent = 'Crear grupo nuevo'
 
     if (!res?.ok) {
-      showError(homeError, res?.error || 'No se pudo crear la sala')
+      showError(homeError, res?.error || 'No se pudo crear el grupo')
       return
     }
 
     inputRoomName.value = ''
     inviteCode.textContent = res.invite || ''
     inviteBox.classList.remove('hidden')
-    showToast('Sala creada')
+    showToast('Grupo creado')
 
     isConnected = true
     setCurrentRoom(res.room)
@@ -221,17 +221,17 @@
     btnRoomJoin.textContent = 'Uniendo...'
     const res = await window.peareal.joinRoom(invite, inputJoinRoomName.value.trim()).catch(e => ({ ok: false, error: e.message }))
     btnRoomJoin.disabled = false
-    btnRoomJoin.textContent = 'Unirme a sala'
+    btnRoomJoin.textContent = 'Unirme a grupo'
 
     if (!res?.ok) {
-      showError(homeError, res?.error || 'No se pudo unir a la sala')
+      showError(homeError, res?.error || 'No se pudo unir al grupo')
       return
     }
 
     inputInvite.value = ''
     inputJoinRoomName.value = ''
     inviteBox.classList.add('hidden')
-    showToast('Unido a la sala')
+    showToast('Unido al grupo')
 
     isConnected = true
     setCurrentRoom(res.room)

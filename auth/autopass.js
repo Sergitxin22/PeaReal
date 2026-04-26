@@ -157,7 +157,7 @@ async function activateRoom(roomId) {
 async function createGroup(options = {}) {
   await ensureRootDirs()
   const roomId = randomUUID()
-  const roomName = normalizeRoomName(options.name, 'Sala')
+  const roomName = normalizeRoomName(options.name, 'Grupo')
   const store = await openStoreForRoom(roomId)
   const pass = new Autopass(store)
   await pass.ready()
@@ -181,7 +181,7 @@ async function createGroup(options = {}) {
 async function joinGroup(inviteCode, options = {}) {
   await ensureRootDirs()
   const roomId = randomUUID()
-  const roomName = normalizeRoomName(options.name, 'Sala importada')
+  const roomName = normalizeRoomName(options.name, 'Grupo importado')
   const store = await openStoreForRoom(roomId)
   const pairer = Autopass.pair(store, inviteCode.trim())
   await pairer.ready()

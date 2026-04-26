@@ -121,6 +121,25 @@ function isImageDataUrl(value) {
   return typeof value === 'string' && /^data:image\/(png|jpeg|jpg|webp);base64,/i.test(value)
 }
 
+function parseInvitePayload(rawInviteCode) {
+  const raw = String(rawInviteCode || '').trim()
+  if (!raw) return { inviteCode: '', roomName: '' }
+
+  // Supported format for sharing: peareal://invite?code=...&name=...
+  if (raw.startsWith('peareal://')) {
+    try {
+      const parsed = new URL(raw)
+      if (parsed.hostname === 'invite') {
+        const inviteCode = String(parsed.searchParams.get('code') || '').trim()
+        const roomName = String(parsed.searchParams.get('name') || '').trim()
+        if (inviteCode) return { inviteCode, roomName }
+      }
+    } catch { }
+  }
+
+  return { inviteCode: raw, roomName: '' }
+}
+
 async function getStatusPayload() {
   let submitted = false
   if (pass && authorHex) {
@@ -216,8 +235,11 @@ async function handleAuthCreate(name) {
   return handleRoomCreate(name)
 }
 
-async function handleAuthJoin(inviteCode) {
-  return handleRoomJoin(inviteCode)
+async function handleAuthJoin(inviteCode, name) {
+  const parsed = parseInvitePayload(inviteCode)
+  const finalInviteCode = parsed.inviteCode
+  const finalName = String(name || '').trim() || parsed.roomName
+  return handleRoomJoin(finalInviteCode, finalName)
 }
 
 async function handleAuthResume() {
@@ -309,7 +331,11 @@ async function startMobileBridge() {
         }
 
         if (action === 'auth:join') {
-          sendMobile(ws, { type: 'response', id, ...(await handleAuthJoin(payload.inviteCode || '')) })
+          sendMobile(ws, {
+            type: 'response',
+            id,
+            ...(await handleAuthJoin(payload.inviteCode || '', payload.roomName || ''))
+          })
           return
         }
 
@@ -391,7 +417,7 @@ ipcMain.handle('auth:create', async (_e, name) => {
 
 ipcMain.handle('auth:join', async (_e, inviteCode) => {
   try {
-    return await handleAuthJoin(inviteCode)
+    return await handleAuthJoin(inviteCode, '')
   } catch (e) {
     console.error('auth:join error', e)
     return { ok: false, error: e.message }

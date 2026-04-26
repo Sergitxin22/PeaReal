@@ -316,6 +316,7 @@
         <p class="muted"><span id="dot" class="status-dot ko"></span><span id="conn">Conectando...</span></p>
         <p class="muted" id="who"></p>
         <div class="row" id="roomTopActions">
+            <button id="btnRoomInvite">Invite</button>
             <button id="btnGoHome">Ir al home</button>
             <button id="btnLeaveRoom">Abandonar sala</button>
         </div>
@@ -397,6 +398,7 @@
         const btnOpenCamera = $('btnOpenCamera')
         const btnPickGallery = $('btnPickGallery')
         const btnUpload = $('btnUpload')
+        const btnRoomInvite = $('btnRoomInvite')
         const btnGoHome = $('btnGoHome')
         const btnLeaveRoom = $('btnLeaveRoom')
         const msg = $('msg')
@@ -426,6 +428,14 @@
             return typeof value === 'string' && /^data:image\/(png|jpeg|jpg|webp);base64,/i.test(value)
         }
 
+        function buildShareInvite(inviteCode, roomName) {
+            const code = String(inviteCode || '').trim()
+            if (!code) return ''
+            const name = String(roomName || '').trim()
+            if (!name) return code
+            return `peareal://invite?code=${encodeURIComponent(code)}&name=${encodeURIComponent(name)}`
+        }
+
         function updateInviteCopyState() {
             const hasInvite = Boolean((invite?.value || '').trim())
             if (btnCopyInvite) {
@@ -435,30 +445,43 @@
         }
 
         async function copyInviteToClipboard() {
-            let value = (invite?.value || '').trim()
+            let value = ''
+            if (appState.groupConnected && appState.roomId) {
+                const refreshed = await call('rooms:invite', { roomId: appState.roomId })
+                if (refreshed?.ok && refreshed.invite) {
+                    value = String(refreshed.invite)
+                    invite.value = buildShareInvite(value, appState.roomName)
+                    updateInviteCopyState()
+                }
+            }
+
+            if (!value) {
+                value = (invite?.value || '').trim()
+            }
             if (!value) {
                 setMessage('No hay codigo para copiar.', 'danger')
                 return
             }
 
-            if (appState.groupConnected && appState.roomId) {
-                const refreshed = await call('rooms:invite', { roomId: appState.roomId })
-                if (refreshed?.ok && refreshed.invite) {
-                    value = String(refreshed.invite)
-                    invite.value = value
-                    updateInviteCopyState()
-                }
-            }
+            const shareValue = buildShareInvite(value, appState.roomName)
 
             try {
-                await navigator.clipboard.writeText(value)
+                await navigator.clipboard.writeText(shareValue)
             } catch {
-                invite.focus()
-                invite.select()
+                const ta = document.createElement('textarea')
+                ta.value = shareValue
+                ta.setAttribute('readonly', 'true')
+                ta.style.position = 'fixed'
+                ta.style.opacity = '0'
+                ta.style.pointerEvents = 'none'
+                document.body.appendChild(ta)
+                ta.focus()
+                ta.select()
                 const ok = document.execCommand('copy')
+                document.body.removeChild(ta)
                 if (!ok) throw new Error('Copy failed')
             }
-            setMessage('Invite copiado al portapapeles.', 'success')
+            setMessage('Invite copiado con nombre de sala.', 'success')
         }
 
         function renderRooms(rooms, currentId) {
@@ -564,6 +587,7 @@
             btnOpenCamera.disabled = !(appState.wsConnected && appState.groupConnected)
             btnPickGallery.disabled = !(appState.wsConnected && appState.groupConnected)
             btnUpload.disabled = !canUpload
+            btnRoomInvite.disabled = !(appState.wsConnected && appState.groupConnected)
             btnGoHome.disabled = !(appState.wsConnected && appState.groupConnected)
             btnGoHome.classList.toggle('hidden', showHome)
             btnLeaveRoom.disabled = !(appState.wsConnected && appState.groupConnected)
@@ -711,7 +735,9 @@
                 await runAction(btnCreate, async () => {
                     const roomName = roomNameCreate?.value?.trim() || ''
                     const r = await call('auth:create', { roomName })
-                    if (invite && r.invite) invite.value = r.invite
+                    const createdRoomName = String(r?.room?.name || roomName || '').trim()
+                    if (createdRoomName) appState.roomName = createdRoomName
+                    if (invite && r.invite) invite.value = buildShareInvite(r.invite, createdRoomName)
                     updateInviteCopyState()
                     appState.manualHomeView = true
                     setMessage(`Grupo creado${roomName ? ` (${roomName})` : ''}. Copia el invite para compartir.`, 'success')
@@ -740,6 +766,14 @@
         })
 
         btnCopyInvite?.addEventListener('click', async () => {
+            try {
+                await copyInviteToClipboard()
+            } catch (e) {
+                setMessage(e.message || 'No se pudo copiar.', 'danger')
+            }
+        })
+
+        btnRoomInvite?.addEventListener('click', async () => {
             try {
                 await copyInviteToClipboard()
             } catch (e) {

@@ -91,6 +91,19 @@ function normalizeRoomName(name, fallbackPrefix) {
   return `${fallbackPrefix} ${hh}:${mm}`
 }
 
+function withTimeout(promise, ms, message) {
+  let timer = null
+  return new Promise((resolve, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), ms)
+    Promise.resolve(promise)
+      .then((value) => resolve(value))
+      .catch((err) => reject(err))
+      .finally(() => {
+        if (timer) clearTimeout(timer)
+      })
+  })
+}
+
 async function closeActiveStore() {
   if (_store && typeof _store.close === 'function') {
     try { await _store.close() } catch { }
@@ -172,7 +185,11 @@ async function joinGroup(inviteCode, options = {}) {
   const store = await openStoreForRoom(roomId)
   const pairer = Autopass.pair(store, inviteCode.trim())
   await pairer.ready()
-  const pass = await pairer.finished()
+  const pass = await withTimeout(
+    pairer.finished(),
+    20000,
+    'No se pudo completar la union. Genera un invite nuevo e intentalo otra vez.'
+  )
   await pass.ready()
   _pass = pass
 
@@ -211,6 +228,29 @@ async function listRooms() {
 
 async function openRoom(roomId) {
   return activateRoom(roomId)
+}
+
+async function createRoomInvite(roomId) {
+  const targetRoomId = roomId || (await getCurrentRoomId())
+  if (!targetRoomId) throw new Error('No room selected')
+
+  let active = null
+  if (_pass && _activeRoomId === targetRoomId) {
+    const room = await getRoomById(targetRoomId)
+    if (!room) throw new Error('Room not found')
+    active = { pass: _pass, room }
+  } else {
+    active = await activateRoom(targetRoomId)
+  }
+
+  if (!active?.pass || !active?.room) throw new Error('Room not found')
+
+  const invite = await active.pass.createInvite()
+  active.room.inviteCode = invite
+  active.room.lastOpenedAt = Date.now()
+  await upsertRoom(active.room)
+
+  return { invite, room: active.room }
 }
 
 async function getCurrentRoom() {
@@ -285,6 +325,7 @@ module.exports = {
   openSession,
   listRooms,
   openRoom,
+  createRoomInvite,
   getCurrentRoom,
   leaveRoom,
   getPass,

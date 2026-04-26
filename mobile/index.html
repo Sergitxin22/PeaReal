@@ -435,10 +435,19 @@
         }
 
         async function copyInviteToClipboard() {
-            const value = (invite?.value || '').trim()
+            let value = (invite?.value || '').trim()
             if (!value) {
                 setMessage('No hay codigo para copiar.', 'danger')
                 return
+            }
+
+            if (appState.groupConnected && appState.roomId) {
+                const refreshed = await call('rooms:invite', { roomId: appState.roomId })
+                if (refreshed?.ok && refreshed.invite) {
+                    value = String(refreshed.invite)
+                    invite.value = value
+                    updateInviteCopyState()
+                }
             }
 
             try {

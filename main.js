@@ -11,6 +11,7 @@ const {
   joinGroup,
   listRooms,
   openRoom,
+  createRoomInvite,
   getCurrentRoom,
   leaveRoom,
   getAuthorHex,
@@ -200,6 +201,17 @@ async function handleRoomLeave(roomId) {
   return { ok: true }
 }
 
+async function handleRoomInvite(roomId) {
+  const targetRoomId = roomId || activeRoom?.id
+  if (!targetRoomId) return { ok: false, error: 'No room selected' }
+  const result = await createRoomInvite(targetRoomId)
+  if (activeRoom?.id === targetRoomId && result?.room) {
+    activeRoom = result.room
+  }
+  await notifyStatusChanged()
+  return { ok: true, invite: result.invite, room: result.room }
+}
+
 async function handleAuthCreate(name) {
   return handleRoomCreate(name)
 }
@@ -318,6 +330,11 @@ async function startMobileBridge() {
           return
         }
 
+        if (action === 'rooms:invite') {
+          sendMobile(ws, { type: 'response', id, ...(await handleRoomInvite(payload.roomId || null)) })
+          return
+        }
+
         if (action === 'feed:submitImage') {
           if (!pass) {
             sendMobile(ws, { type: 'response', id, ok: false, error: 'Join or create a group first' })
@@ -418,6 +435,14 @@ ipcMain.handle('rooms:open', async (_e, roomId) => {
 ipcMain.handle('rooms:leave', async (_e, roomId) => {
   try {
     return await handleRoomLeave(roomId)
+  } catch (e) {
+    return { ok: false, error: e.message }
+  }
+})
+
+ipcMain.handle('rooms:invite', async (_e, roomId) => {
+  try {
+    return await handleRoomInvite(roomId)
   } catch (e) {
     return { ok: false, error: e.message }
   }

@@ -22,6 +22,7 @@ const { watch } = require('./p2p/peer')
 const {
   submitNote,
   submitComment,
+  submitReaction,
   hasSubmitted,
   getFeedNotes,
   getRoundMeta,
@@ -287,6 +288,13 @@ async function handleFeedComment(noteAuthor, text) {
   return { ok: true, comment }
 }
 
+async function handleFeedReact(noteAuthor, reaction) {
+  if (!pass) return { ok: false, error: 'Not connected' }
+  if (!encKeyPair?.privateKey) return { ok: false, error: 'Missing local encryption keys' }
+  const result = await submitReaction(pass, noteAuthor, reaction, authorHex, encKeyPair.privateKey)
+  return { ok: true, ...result }
+}
+
 async function startMobileBridge() {
   const mobilePath = path.join(__dirname, 'mobile', 'index.html')
 
@@ -400,6 +408,15 @@ async function startMobileBridge() {
             type: 'response',
             id,
             ...(await handleFeedComment(payload.noteAuthor || '', payload.text || ''))
+          })
+          return
+        }
+
+        if (action === 'feed:react') {
+          sendMobile(ws, {
+            type: 'response',
+            id,
+            ...(await handleFeedReact(payload.noteAuthor || '', payload.reaction || ''))
           })
           return
         }
@@ -518,6 +535,14 @@ ipcMain.handle('feed:get', async () => {
 ipcMain.handle('feed:comment', async (_e, noteAuthor, text) => {
   try {
     return await handleFeedComment(noteAuthor, text)
+  } catch (e) {
+    return { ok: false, error: e.message }
+  }
+})
+
+ipcMain.handle('feed:react', async (_e, noteAuthor, reaction) => {
+  try {
+    return await handleFeedReact(noteAuthor, reaction)
   } catch (e) {
     return { ok: false, error: e.message }
   }

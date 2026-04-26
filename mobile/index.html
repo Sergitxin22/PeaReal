@@ -291,6 +291,47 @@
             font-size: .76rem;
         }
 
+        .reaction-bar {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin-top: 8px;
+            margin-bottom: 2px;
+        }
+
+        .reaction-btn {
+            padding: 6px 9px;
+            border-radius: 999px;
+            background: #0f1915;
+            border: 1px solid var(--border);
+            font-size: .82rem;
+            line-height: 1;
+            min-height: 30px;
+        }
+
+        .reaction-btn.active {
+            border-color: var(--accent-2);
+            background: rgba(142, 247, 177, 0.12);
+        }
+
+        .reaction-btn.pop {
+            animation: reactionPop .22s ease-out;
+        }
+
+        @keyframes reactionPop {
+            0% {
+                transform: scale(1);
+            }
+
+            45% {
+                transform: scale(1.14);
+            }
+
+            100% {
+                transform: scale(1);
+            }
+        }
+
         .feed-locked {
             border: 1px dashed var(--border);
             border-radius: 10px;
@@ -430,6 +471,7 @@
         let imageDataUrl = null
         let refreshTimer = null
         let activeChatAuthor = null
+        const reactionChoices = ['❤️', '😂', '🔥', '👍', '😮', '😢']
         const appState = {
             wsConnected: false,
             groupConnected: false,
@@ -592,6 +634,15 @@
                     const when = fmtTime(n?.ts)
                     const locked = n?.hidden || !isImageDataUrl(n?.content)
                     const comments = Array.isArray(n?.comments) ? n.comments : []
+                    const reactionCounts = n?.reactions?.counts && typeof n.reactions.counts === 'object' ? n.reactions.counts : {}
+                    const myReaction = String(n?.reactions?.mine || '').trim()
+                    const reactionsHtml = reactionChoices
+                        .map((emoji) => {
+                            const count = Number(reactionCounts[emoji] || 0)
+                            const isActive = myReaction === emoji
+                            return `<button type="button" class="reaction-btn ${isActive ? 'active' : ''}" data-react-note="${esc(n?.author || '')}" data-react-emoji="${esc(emoji)}">${esc(emoji)} ${count}</button>`
+                        })
+                        .join('')
                     const isOpen = !locked && activeChatAuthor === n?.author
                     const commentsHtml = comments.length === 0
                         ? '<div class="comment-empty">Sin comentarios todavia.</div>'
@@ -603,6 +654,7 @@
                         ? '<div class="feed-locked">Bloqueado. Esperando desbloqueo mutuo con ese peer.</div>'
                         : `
                             <img class="feed-image" data-open-chat="${esc(n?.author || '')}" src="${esc(n.content)}" alt="foto ${esc(who)}" />
+                            <div class="reaction-bar">${reactionsHtml}</div>
                             <div class="comment-count">Comentarios: ${comments.length}</div>
                             <div class="comment-chat ${isOpen ? '' : 'hidden'}" data-chat-for="${esc(n?.author || '')}">
                                 <div class="comment-list">${commentsHtml}</div>
@@ -865,6 +917,29 @@
         feedList?.addEventListener('click', async (event) => {
             const rawTarget = event.target
             if (!(rawTarget instanceof HTMLElement)) return
+
+            const reactTarget = rawTarget.closest('[data-react-note][data-react-emoji]')
+            if (reactTarget instanceof HTMLElement) {
+                const noteAuthor = reactTarget.getAttribute('data-react-note')
+                const reaction = reactTarget.getAttribute('data-react-emoji')
+                if (!noteAuthor || !reaction) return
+
+                try {
+                    reactTarget.classList.remove('pop')
+                    void reactTarget.offsetWidth
+                    reactTarget.classList.add('pop')
+                    reactTarget.disabled = true
+                    await (async () => {
+                        await call('feed:react', { noteAuthor, reaction })
+                        await refreshFeed()
+                    })()
+                } catch (e) {
+                    setMessage(e.message || 'No se pudo registrar la reaccion.', 'danger')
+                } finally {
+                    reactTarget.disabled = false
+                }
+                return
+            }
 
             const openTarget = rawTarget.closest('[data-open-chat]')
             if (openTarget instanceof HTMLElement) {

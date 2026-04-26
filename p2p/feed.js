@@ -26,6 +26,10 @@ function metaKey(roundId) { return `round:${roundId}:meta` }
 function unlockGrantKey(roundId, authorHex, requesterHex) { return `round:${roundId}:unlockGrant:${authorHex}:${requesterHex}` }
 function commentPrefix(roundId, noteAuthorHex) { return `round:${roundId}:comment:${noteAuthorHex}:` }
 function commentKey(roundId, noteAuthorHex, commentId) { return `${commentPrefix(roundId, noteAuthorHex)}${commentId}` }
+function reactionPrefix(roundId, noteAuthorHex) { return `round:${roundId}:reaction:${noteAuthorHex}:` }
+function reactionKey(roundId, noteAuthorHex, reactorAuthorHex) { return `${reactionPrefix(roundId, noteAuthorHex)}${reactorAuthorHex}` }
+
+const ALLOWED_REACTIONS = new Set(['❤️', '😂', '🔥', '👍', '😮', '😢'])
 
 function parseAuthorHexFromNoteKey(key) {
   try {
@@ -136,12 +140,38 @@ function normalizeCommentText(text) {
   return normalized
 }
 
+function normalizeReactionEmoji(emoji) {
+  const normalized = String(emoji || '').trim()
+  if (!ALLOWED_REACTIONS.has(normalized)) {
+    throw new Error('Reaccion no soportada')
+  }
+  return normalized
+}
+
 async function listCommentsForNote(pass, roundId, noteAuthorHex) {
   const raw = await listByPrefix(pass, commentPrefix(roundId, noteAuthorHex))
   return raw
     .map(({ value }) => value)
     .filter(v => v && typeof v === 'object' && v.author && typeof v.text === 'string')
     .sort((a, b) => (a.ts || 0) - (b.ts || 0))
+}
+
+async function listReactionsForNote(pass, roundId, noteAuthorHex, localAuthorHex) {
+  const raw = await listByPrefix(pass, reactionPrefix(roundId, noteAuthorHex))
+  const counts = {}
+  let mine = null
+
+  for (const { value } of raw) {
+    if (!value || typeof value !== 'object') continue
+    const reaction = String(value.reaction || '').trim()
+    if (!ALLOWED_REACTIONS.has(reaction)) continue
+    counts[reaction] = (counts[reaction] || 0) + 1
+    if (String(value.author || '') === String(localAuthorHex || '')) {
+      mine = reaction
+    }
+  }
+
+  return { counts, mine }
 }
 
 async function getCurrentRound(pass) {
@@ -269,6 +299,41 @@ async function submitComment(pass, noteAuthorHex, text, localAuthorHex, localPri
   return payload
 }
 
+async function submitReaction(pass, noteAuthorHex, reactionEmoji, localAuthorHex, localPrivateKeyPem) {
+  const roundId = await getCurrentRound(pass)
+  if (!roundId) throw new Error('No hay ronda activa')
+
+  const reaction = normalizeReactionEmoji(reactionEmoji)
+  const targetAuthor = String(noteAuthorHex || '').trim()
+  if (!targetAuthor) throw new Error('Foto no valida')
+
+  const targetNote = await get(pass, noteKey(roundId, targetAuthor))
+  if (!targetNote) throw new Error('La foto no existe en la ronda actual')
+
+  const submitted = await hasSubmitted(pass, localAuthorHex)
+  if (!submitted) throw new Error('Debes publicar tu foto antes de reaccionar')
+
+  const canDecrypt = await canDecryptNote(pass, roundId, targetNote, localAuthorHex, localPrivateKeyPem)
+  if (!canDecrypt) throw new Error('Solo puedes reaccionar a fotos que tengas desbloqueadas')
+
+  const key = reactionKey(roundId, targetAuthor, localAuthorHex)
+  const existing = await get(pass, key)
+  const existingReaction = String(existing?.reaction || '').trim()
+
+  if (existingReaction === reaction) {
+    await del(pass, key)
+    return { active: false, reaction: null }
+  }
+
+  await put(pass, key, {
+    noteAuthor: targetAuthor,
+    author: localAuthorHex,
+    reaction,
+    ts: Date.now()
+  })
+  return { active: true, reaction }
+}
+
 async function ensureAutoGrantForPeer(pass, roundId, localAuthorHex, targetAuthorHex, targetPublicKeyPem, localPrivateKeyPem) {
   if (targetAuthorHex === localAuthorHex) return
   if (!targetPublicKeyPem) return
@@ -361,10 +426,18 @@ async function getFeedNotes(pass, localUserSubmitted, _groupKey, localAuthorHex,
     }
 
     if (content === null) {
-      results.push({ author: note.author, content: null, ts: note.ts, hidden: true, comments: [] })
+      results.push({
+        author: note.author,
+        content: null,
+        ts: note.ts,
+        hidden: true,
+        comments: [],
+        reactions: { counts: {}, mine: null }
+      })
     } else {
       const comments = await listCommentsForNote(pass, roundId, note.author)
-      results.push({ author: note.author, content, ts: note.ts, hidden: false, comments })
+      const reactions = await listReactionsForNote(pass, roundId, note.author, localAuthorHex)
+      results.push({ author: note.author, content, ts: note.ts, hidden: false, comments, reactions })
     }
   }
 
@@ -407,6 +480,7 @@ module.exports = {
   startNewRound,
   submitNote,
   submitComment,
+  submitReaction,
   hasSubmitted,
   getFeedNotes,
   getRoundMeta,

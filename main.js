@@ -21,6 +21,7 @@ const {
 const { watch } = require('./p2p/peer')
 const {
   submitNote,
+  submitComment,
   hasSubmitted,
   getFeedNotes,
   getRoundMeta,
@@ -279,6 +280,13 @@ async function handleFeedGet() {
   return { ok: true, notes, submitted, meta }
 }
 
+async function handleFeedComment(noteAuthor, text) {
+  if (!pass) return { ok: false, error: 'Not connected' }
+  if (!encKeyPair?.privateKey) return { ok: false, error: 'Missing local encryption keys' }
+  const comment = await submitComment(pass, noteAuthor, text, authorHex, encKeyPair.privateKey)
+  return { ok: true, comment }
+}
+
 async function startMobileBridge() {
   const mobilePath = path.join(__dirname, 'mobile', 'index.html')
 
@@ -384,6 +392,15 @@ async function startMobileBridge() {
 
         if (action === 'feed:get') {
           sendMobile(ws, { type: 'response', id, ...(await handleFeedGet()) })
+          return
+        }
+
+        if (action === 'feed:comment') {
+          sendMobile(ws, {
+            type: 'response',
+            id,
+            ...(await handleFeedComment(payload.noteAuthor || '', payload.text || ''))
+          })
           return
         }
 
@@ -495,6 +512,14 @@ ipcMain.handle('feed:get', async () => {
     return await handleFeedGet()
   } catch (e) {
     return { ok: false, notes: [], error: e.message }
+  }
+})
+
+ipcMain.handle('feed:comment', async (_e, noteAuthor, text) => {
+  try {
+    return await handleFeedComment(noteAuthor, text)
+  } catch (e) {
+    return { ok: false, error: e.message }
   }
 })
 

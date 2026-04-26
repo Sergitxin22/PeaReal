@@ -24,6 +24,8 @@ function ensureXChaChaAvailable() {
 function noteKey(roundId, authorHex) { return `round:${roundId}:note:${authorHex}` }
 function metaKey(roundId) { return `round:${roundId}:meta` }
 function unlockGrantKey(roundId, authorHex, requesterHex) { return `round:${roundId}:unlockGrant:${authorHex}:${requesterHex}` }
+function commentPrefix(roundId, noteAuthorHex) { return `round:${roundId}:comment:${noteAuthorHex}:` }
+function commentKey(roundId, noteAuthorHex, commentId) { return `${commentPrefix(roundId, noteAuthorHex)}${commentId}` }
 
 function parseAuthorHexFromNoteKey(key) {
   try {
@@ -121,6 +123,27 @@ function unwrapContentKey(wrappedKeyB64, localPrivateKeyPem) {
   }
 }
 
+function buildCommentId() {
+  const ts = Date.now()
+  const rnd = crypto.randomBytes(4).toString('hex')
+  return `${ts}-${rnd}`
+}
+
+function normalizeCommentText(text) {
+  const normalized = String(text || '').trim().replace(/\s+/g, ' ')
+  if (!normalized) throw new Error('El comentario no puede estar vacio')
+  if (normalized.length > 500) throw new Error('El comentario es demasiado largo (max 500 caracteres)')
+  return normalized
+}
+
+async function listCommentsForNote(pass, roundId, noteAuthorHex) {
+  const raw = await listByPrefix(pass, commentPrefix(roundId, noteAuthorHex))
+  return raw
+    .map(({ value }) => value)
+    .filter(v => v && typeof v === 'object' && v.author && typeof v.text === 'string')
+    .sort((a, b) => (a.ts || 0) - (b.ts || 0))
+}
+
 async function getCurrentRound(pass) {
   return await get(pass, 'config:currentRound')
 }
@@ -201,6 +224,49 @@ async function hasSubmitted(pass, authorHex) {
   const roundId = await getCurrentRound(pass)
   if (!roundId) return false
   return (await get(pass, noteKey(roundId, authorHex))) !== null
+}
+
+async function canDecryptNote(pass, roundId, note, localAuthorHex, localPrivateKeyPem) {
+  if (!note?.author) return false
+  const grant = await get(pass, unlockGrantKey(roundId, note.author, localAuthorHex))
+  if (!grant?.wrappedKey) return false
+  const contentKey = unwrapContentKey(grant.wrappedKey, localPrivateKeyPem)
+  if (!contentKey) return false
+  const content = decryptContent(note.encrypted, note.nonce, contentKey)
+  if (content === null) return false
+  const computedCommit = hashCommit(roundId, content, note.commitSaltHex)
+  return computedCommit === note.commitment
+}
+
+async function submitComment(pass, noteAuthorHex, text, localAuthorHex, localPrivateKeyPem) {
+  const roundId = await getCurrentRound(pass)
+  if (!roundId) throw new Error('No hay ronda activa')
+
+  const commentText = normalizeCommentText(text)
+  const targetAuthor = String(noteAuthorHex || '').trim()
+  if (!targetAuthor) throw new Error('Foto no valida')
+
+  const targetNote = await get(pass, noteKey(roundId, targetAuthor))
+  if (!targetNote) throw new Error('La foto no existe en la ronda actual')
+
+  const submitted = await hasSubmitted(pass, localAuthorHex)
+  if (!submitted) throw new Error('Debes publicar tu foto antes de comentar')
+
+  const canDecrypt = await canDecryptNote(pass, roundId, targetNote, localAuthorHex, localPrivateKeyPem)
+  if (!canDecrypt) throw new Error('Solo puedes comentar fotos que tengas desbloqueadas')
+
+  const ts = Date.now()
+  const id = buildCommentId()
+  const payload = {
+    id,
+    noteAuthor: targetAuthor,
+    author: localAuthorHex,
+    text: commentText,
+    ts
+  }
+
+  await put(pass, commentKey(roundId, targetAuthor, id), payload)
+  return payload
 }
 
 async function ensureAutoGrantForPeer(pass, roundId, localAuthorHex, targetAuthorHex, targetPublicKeyPem, localPrivateKeyPem) {
@@ -295,9 +361,10 @@ async function getFeedNotes(pass, localUserSubmitted, _groupKey, localAuthorHex,
     }
 
     if (content === null) {
-      results.push({ author: note.author, content: null, ts: note.ts, hidden: true })
+      results.push({ author: note.author, content: null, ts: note.ts, hidden: true, comments: [] })
     } else {
-      results.push({ author: note.author, content, ts: note.ts, hidden: false })
+      const comments = await listCommentsForNote(pass, roundId, note.author)
+      results.push({ author: note.author, content, ts: note.ts, hidden: false, comments })
     }
   }
 
@@ -339,6 +406,7 @@ module.exports = {
   getCurrentRound,
   startNewRound,
   submitNote,
+  submitComment,
   hasSubmitted,
   getFeedNotes,
   getRoundMeta,

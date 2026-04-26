@@ -229,6 +229,66 @@
             border-radius: 10px;
             border: 1px solid var(--border);
             background: #000;
+            cursor: pointer;
+            transition: transform .16s ease;
+        }
+
+        .feed-item.open .feed-image {
+            transform: scale(.965);
+        }
+
+        .comment-chat {
+            margin-top: 8px;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 8px;
+            background: rgba(0, 0, 0, 0.16);
+        }
+
+        .comment-list {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            max-height: 180px;
+            overflow-y: auto;
+            margin-bottom: 8px;
+        }
+
+        .comment-item {
+            font-size: .8rem;
+            line-height: 1.35;
+            color: var(--text);
+        }
+
+        .comment-meta {
+            color: var(--muted);
+            font-size: .74rem;
+            margin-right: 6px;
+        }
+
+        .comment-empty {
+            color: var(--muted);
+            font-size: .8rem;
+        }
+
+        .comment-compose {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+        }
+
+        .comment-compose input {
+            flex: 1 1 auto;
+            min-width: 0;
+            padding: 8px 10px;
+            border-radius: 10px;
+            font-size: .85rem;
+        }
+
+        .comment-count {
+            margin-top: 6px;
+            color: var(--muted);
+            font-size: .76rem;
         }
 
         .feed-locked {
@@ -369,6 +429,7 @@
         const pending = new Map()
         let imageDataUrl = null
         let refreshTimer = null
+        let activeChatAuthor = null
         const appState = {
             wsConnected: false,
             groupConnected: false,
@@ -530,11 +591,29 @@
                     const who = `#${String(n?.author || '').slice(0, 8)}`
                     const when = fmtTime(n?.ts)
                     const locked = n?.hidden || !isImageDataUrl(n?.content)
+                    const comments = Array.isArray(n?.comments) ? n.comments : []
+                    const isOpen = !locked && activeChatAuthor === n?.author
+                    const commentsHtml = comments.length === 0
+                        ? '<div class="comment-empty">Sin comentarios todavia.</div>'
+                        : comments.map((c) => {
+                            const chWho = `#${String(c?.author || '').slice(0, 8)}`
+                            return `<div class="comment-item"><span class="comment-meta">${esc(chWho)} · ${esc(fmtTime(c?.ts))}</span>${esc(c?.text || '')}</div>`
+                        }).join('')
                     const body = locked
                         ? '<div class="feed-locked">Bloqueado. Esperando desbloqueo mutuo con ese peer.</div>'
-                        : `<img class="feed-image" src="${esc(n.content)}" alt="foto ${esc(who)}" />`
+                        : `
+                            <img class="feed-image" data-open-chat="${esc(n?.author || '')}" src="${esc(n.content)}" alt="foto ${esc(who)}" />
+                            <div class="comment-count">Comentarios: ${comments.length}</div>
+                            <div class="comment-chat ${isOpen ? '' : 'hidden'}" data-chat-for="${esc(n?.author || '')}">
+                                <div class="comment-list">${commentsHtml}</div>
+                                <div class="comment-compose">
+                                    <input type="text" maxlength="500" data-comment-input="${esc(n?.author || '')}" placeholder="Escribe un comentario" />
+                                    <button type="button" data-send-comment="${esc(n?.author || '')}">Enviar</button>
+                                </div>
+                            </div>
+                        `
 
-                    return `<div class="feed-item"><div class="feed-item-header"><span>${esc(who)}</span><span>${esc(when)}</span></div>${body}</div>`
+                    return `<div class="feed-item ${isOpen ? 'open' : ''}" data-note-author="${esc(n?.author || '')}"><div class="feed-item-header"><span>${esc(who)}</span><span>${esc(when)}</span></div>${body}</div>`
                 })
                 .join('')
 
@@ -780,6 +859,49 @@
                 await copyInviteToClipboard()
             } catch (e) {
                 setMessage(e.message || 'No se pudo copiar.', 'danger')
+            }
+        })
+
+        feedList?.addEventListener('click', async (event) => {
+            const rawTarget = event.target
+            if (!(rawTarget instanceof HTMLElement)) return
+
+            const openTarget = rawTarget.closest('[data-open-chat]')
+            if (openTarget instanceof HTMLElement) {
+                const noteAuthor = openTarget.getAttribute('data-open-chat')
+                if (!noteAuthor) return
+                activeChatAuthor = activeChatAuthor === noteAuthor ? null : noteAuthor
+                try {
+                    await refreshFeed()
+                } catch (e) {
+                    setMessage(e.message || 'No se pudo abrir el chat.', 'danger')
+                }
+                return
+            }
+
+            const sendTarget = rawTarget.closest('[data-send-comment]')
+            if (!(sendTarget instanceof HTMLElement)) return
+            const noteAuthor = sendTarget.getAttribute('data-send-comment')
+            if (!noteAuthor) return
+
+            const inputEl = feedList.querySelector(`[data-comment-input="${noteAuthor}"]`)
+            if (!(inputEl instanceof HTMLInputElement)) return
+            const text = inputEl.value.trim()
+            if (!text) {
+                setMessage('Escribe un comentario.', 'danger')
+                return
+            }
+
+            try {
+                await runAction(sendTarget, async () => {
+                    await call('feed:comment', { noteAuthor, text })
+                    inputEl.value = ''
+                    activeChatAuthor = noteAuthor
+                    setMessage('Comentario enviado.', 'success')
+                    await refreshFeed()
+                })
+            } catch (e) {
+                setMessage(e.message || 'No se pudo enviar el comentario.', 'danger')
             }
         })
 
